@@ -175,13 +175,13 @@ tailwind.config = {
       </div>
       <dl class="mt-4 pt-3 border-t border-dashed border-line grid grid-cols-2 gap-y-1 text-sm">
         <dt class="text-sub">支払額（1パック）</dt><dd class="num text-right font-semibold" id="rPay">—</dd>
-        <dt class="text-sub">過去の最安（この商品）</dt><dd class="num text-right" id="rBest">—</dd>
+        <dt class="text-sub">記録上の最安（この商品）</dt><dd class="num text-right" id="rBest">—</dd>
       </dl>
     </div>
 
     <div class="mt-4 grid grid-cols-3 gap-2">
       <button id="cReset" type="button" class="h-14 rounded-2xl border border-line bg-paper font-bold">クリア</button>
-      <button id="cSave" type="button" class="col-span-2 h-14 rounded-2xl bg-leaf text-white font-bold text-lg disabled:opacity-40" disabled>購入履歴に保存</button>
+      <button id="cSave" type="button" class="col-span-2 h-14 rounded-2xl bg-leaf text-white font-bold text-lg disabled:opacity-40" disabled>お店と一緒に記録</button>
     </div>
   </section>
 
@@ -192,7 +192,11 @@ tailwind.config = {
       <div class="bg-paper border border-line rounded-2xl py-3"><div class="text-xs text-sub">今月の購入</div><div class="num font-bold text-lg" id="sCount">0件</div></div>
       <div class="bg-paper border border-line rounded-2xl py-3"><div class="text-xs text-sub">平均単価</div><div class="num font-bold text-lg" id="sAvg">—</div></div>
     </div>
-    <input id="hq" type="search" placeholder="店名・商品名・メモで絞り込み"
+    <div class="mt-3 grid grid-cols-2 gap-1 p-1 rounded-2xl border border-line bg-paper" role="group" aria-label="表示切替">
+      <button type="button" data-hmode="list" class="hmode h-10 rounded-xl text-sm font-bold">記録の一覧</button>
+      <button type="button" data-hmode="compare" class="hmode h-10 rounded-xl text-sm font-bold">お店で比べる</button>
+    </div>
+    <input id="hq" type="search" placeholder="お店・店舗・商品名・メモで絞り込み"
       class="mt-3 w-full h-12 px-4 rounded-2xl bg-paper border border-line placeholder:text-sub/70 focus:outline-none focus:border-leaf">
     <ul id="historyList" class="mt-3 space-y-2"></ul>
   </section>
@@ -473,6 +477,76 @@ async function loadHistory(){
   state.history = (await DB.getAll('history')).sort((a,b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt||0) - (a.createdAt||0));
 }
 const productBy = uid => state.products.find(p => p.uid === uid);
+
+/* ---- お店（チェーン名＋店舗名）まわり ---- */
+const CHAIN_PRESETS = ['コスモス薬品（ドラッグストアコスモス）','ウエルシア','ツルハドラッグ','マツモトキヨシ','スギ薬局','サンドラッグ','ココカラファイン','クリエイトSD','カワチ薬品','クスリのアオキ','Amazon','LOHACO','楽天市場'];
+const MEMO_TAGS = ['ポイント5倍','チラシ特価','会員価格','クーポン利用','まとめ買い割','在庫少なめ'];
+// 旧データ（store 1項目）も読めるようにする
+const chainOf = h => (h.chain ?? h.store ?? '').trim();
+const branchOf = h => (h.branch ?? '').trim();
+const storeLabel = h => [chainOf(h), branchOf(h)].filter(Boolean).join(' ') || '店名なし';
+const storeKey = h => norm(chainOf(h)) + '|' + norm(branchOf(h));
+const isBuy = h => h.kind !== 'check';
+const itemKey = h => h.uid || ('name:' + ((h.snapshot || {}).name || ''));
+function daysAgo(date){
+  const d = Math.round((new Date(todayStr()) - new Date(date)) / 86400000);
+  return !Number.isFinite(d) ? '' : d <= 0 ? '今日' : d === 1 ? '昨日' : d < 30 ? d + '日前' : d < 365 ? Math.floor(d / 30) + 'か月前' : Math.floor(d / 365) + '年前';
+}
+// 商品ごと・お店ごとに「最新の価格」と「最安値」をまとめる
+function storeComparison(key){
+  const groups = new Map();
+  state.history.filter(h => itemKey(h) === key && Number.isFinite(h.unitPrice)).forEach(h => {
+    const k = storeKey(h);
+    const g = groups.get(k) || { label: storeLabel(h), latest: null, best: null, count: 0 };
+    g.count++;
+    if (!g.latest || (h.date || '') > (g.latest.date || '') || ((h.date || '') === (g.latest.date || '') && (h.createdAt||0) > (g.latest.createdAt||0))) g.latest = h;
+    if (!g.best || h.unitPrice < g.best.unitPrice) g.best = h;
+    groups.set(k, g);
+  });
+  return [...groups.values()].sort((a, b) => a.latest.unitPrice - b.latest.unitPrice);
+}
+function storeCompareHtml(rows){
+  if (!rows.length) return '<p class="text-sm text-sub">まだこの商品の記録がありません。</p>';
+  const min = rows[0].latest.unitPrice;
+  return `<ol class="divide-y divide-line rounded-xl border border-line bg-white overflow-hidden">${rows.map((g, i) => {
+    const diff = g.latest.unitPrice - min;
+    return `<li class="px-3 py-2.5 flex items-center gap-3">
+      <span class="num w-6 h-6 shrink-0 rounded-full text-xs font-bold flex items-center justify-center ${i === 0 ? 'bg-good text-white' : 'bg-sage text-sub'}">${i + 1}</span>
+      <div class="flex-1 min-w-0">
+        <div class="font-bold text-sm truncate">${esc(g.label)}</div>
+        <div class="text-[11px] text-sub num">${esc(g.latest.date)}（${daysAgo(g.latest.date)}）・${yen(g.latest.pay)}/${g.latest.qty}枚${g.count > 1 ? `・最安 ${yen(g.best.unitPrice,1)}` : ''}${g.latest.memo ? '・' + esc(g.latest.memo) : ''}</div>
+      </div>
+      <div class="text-right shrink-0">
+        <div class="num font-semibold">${yen(g.latest.unitPrice,1)}<span class="text-[11px] text-sub">/枚</span></div>
+        <div class="text-[11px] num ${i === 0 ? 'text-good font-bold' : 'text-sub'}">${i === 0 ? (rows.length > 1 ? 'いちばん安い' : '') : '+' + yen(diff,1)}</div>
+      </div>
+    </li>`; }).join('')}</ol>`;
+}
+function uniqueRecent(values){
+  const seen = new Set(), out = [];
+  values.forEach(v => { v = (v || '').trim(); if (v && !seen.has(v)) { seen.add(v); out.push(v); } });
+  return out;
+}
+function storeFieldsHtml(h, prefix){
+  const chains = uniqueRecent([...state.history.map(chainOf), ...CHAIN_PRESETS]);
+  const branches = uniqueRecent(state.history.map(branchOf));
+  return `
+    <label class="block"><span class="text-xs text-sub">お店（チェーン名）</span>
+      <input id="${prefix}Chain" list="${prefix}ChainList" value="${esc(chainOf(h))}" placeholder="例：コスモス薬品" autocomplete="off" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line">
+      <datalist id="${prefix}ChainList">${chains.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
+    <label class="block"><span class="text-xs text-sub">店舗名（任意）</span>
+      <input id="${prefix}Branch" list="${prefix}BranchList" value="${esc(branchOf(h))}" placeholder="例：〇〇店" autocomplete="off" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line">
+      <datalist id="${prefix}BranchList">${branches.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>`;
+}
+function memoFieldHtml(h, prefix){
+  return `<label class="block col-span-2"><span class="text-xs text-sub">メモ</span>
+      <textarea id="${prefix}Memo" rows="2" placeholder="例：ポイント5倍デー、棚の下段にあった" class="mt-0.5 w-full px-3 py-2 rounded-xl bg-white border border-line">${esc(h.memo || '')}</textarea></label>
+    <div class="col-span-2 -mt-1 flex flex-wrap gap-1.5">${MEMO_TAGS.map(t => `<button type="button" data-memo-tag="${esc(t)}" data-target="${prefix}Memo" class="h-8 px-2.5 rounded-full border border-line bg-white text-xs font-bold">＋${esc(t)}</button>`).join('')}</div>`;
+}
+function kindToggleHtml(kind, prefix){
+  const b = (k, t) => `<button type="button" data-kind="${k}" data-prefix="${prefix}" aria-pressed="${kind === k}" class="kindbtn h-10 rounded-lg text-sm font-bold ${kind === k ? 'bg-ink text-white' : 'text-sub'}">${t}</button>`;
+  return `<div class="col-span-2 grid grid-cols-2 gap-1 p-1 rounded-xl border border-line bg-white" id="${prefix}Kind" data-value="${kind}">${b('buy','購入した')}${b('check','価格だけ記録')}</div>`;
+}
 function bestUnitFor(uid, excludeId){
   const xs = state.history.filter(h => h.uid === uid && h.id !== excludeId && Number.isFinite(h.unitPrice));
   if (!xs.length) return null;
@@ -503,6 +577,16 @@ function openSheet(html, onMount){
 function closeSheet(){ $('#sheetWrap').classList.add('hidden'); document.body.style.overflow = ''; }
 $('#sheetBackdrop').addEventListener('click', closeSheet);
 $('#sheetBody').addEventListener('click', e => {
+  const tag = e.target.closest('[data-memo-tag]');
+  if (tag){ const ta = $('#' + tag.dataset.target); if (ta){ const v = ta.value.trim(); if (!v.includes(tag.dataset.memoTag)) ta.value = v ? v + '、' + tag.dataset.memoTag : tag.dataset.memoTag; } return; }
+  const kb = e.target.closest('.kindbtn');
+  if (kb){
+    const wrap = $('#' + kb.dataset.prefix + 'Kind'); wrap.dataset.value = kb.dataset.kind;
+    $$('.kindbtn', wrap).forEach(b => { const on = b === kb; b.setAttribute('aria-pressed', on); b.className = 'kindbtn h-10 rounded-lg text-sm font-bold ' + (on ? 'bg-ink text-white' : 'text-sub'); });
+    const lab = $('#sDateLabel'); if (lab) lab.textContent = kb.dataset.kind === 'check' ? '確認した日' : '購入日';
+    const pk = $('#sPacksWrap'); if (pk) pk.style.visibility = kb.dataset.kind === 'check' ? 'hidden' : '';
+    return;
+  }
   if (!e.target.closest('[data-scan-jan]')) return;
   Scanner.open(code => { const el = $('#pJan'); if (el) { el.value = code; toast('JANを入力しました：' + code); } });
 });
@@ -716,7 +800,7 @@ function renderProducts(){
           <span class="px-1.5 py-0.5 rounded border border-line num">${p.quantity}枚</span>
           ${p.jan_code ? '' : '<span class="px-1.5 py-0.5 rounded border border-dashed border-line text-sub">JAN未登録</span>'}
         </div>
-        ${best ? `<div class="mt-1 text-xs text-good">あなたの最安 <span class="num font-bold">${yen(best.unitPrice,1)}</span>/枚（${esc(best.store||'店名なし')}）</div>` : ''}
+        ${best ? `<div class="mt-1 text-xs text-good">あなたの最安 <span class="num font-bold">${yen(best.unitPrice,1)}</span>/枚（${esc(storeLabel(best))}）</div>` : ''}
       </div>
       <div class="text-right shrink-0">
         <div class="num text-xl font-semibold leading-tight">${yen(p.refUnit,1)}</div>
@@ -778,7 +862,8 @@ function openProduct(uid){
       <div class="rounded-xl bg-sage py-2"><div class="text-[11px] text-sub">1枚</div><div class="num font-bold">${yen(p.refUnit,1)}</div></div>
       <div class="rounded-xl bg-sage py-2"><div class="text-[11px] text-sub">1回</div><div class="num font-bold">${yen(p.refUse,1)}</div></div>
     </div>
-    ${best ? `<p class="mt-2 text-sm text-good">あなたの最安：<span class="num font-bold">${yen(best.unitPrice,1)}</span>/枚（${esc(best.date)} ${esc(best.store||'')}）</p>` : ''}
+    <h3 class="mt-4 mb-1.5 font-bold text-sm">お店ごとの価格（最新の記録）</h3>
+    ${storeCompareHtml(storeComparison(uid))}
     <div class="mt-3 text-sm">
       ${p.jan_code ? `<div class="num">JAN ${esc(p.jan_code)}</div>` : '<div class="text-sub">JANコード未登録（下の「商品情報を編集」から読み取れます）</div>'}
     </div>
@@ -864,7 +949,7 @@ function calc(){
   $('#rUse').textContent = Number.isFinite(r.use) ? yen(r.use, 1) : '—';
   $('#rPay').textContent = r.ok ? yen(r.pay) : '—';
   const best = p ? bestUnitFor(p.uid) : null;
-  $('#rBest').textContent = best ? `${yen(best.unitPrice,1)}/枚` : '—';
+  $('#rBest').textContent = best ? `${yen(best.unitPrice,1)}/枚・${storeLabel(best)}` : '—';
   const marker = $('#rMarker');
   if (!r.ok){ $('#rVerdict').className = 'mt-3 text-lg font-bold'; $('#rVerdict').textContent = '価格を入れると判定します'; $('#rDetail').textContent = ''; marker.style.opacity = 0; $('#cSave').disabled = true; return; }
   $('#cSave').disabled = false;
@@ -889,25 +974,30 @@ $('#cReset').addEventListener('click', () => { ['#cPrice','#cPct','#cYen'].forEa
 $('#cSave').addEventListener('click', () => {
   const r = currentCalc(); if (!r.ok) return;
   const p = productBy(state.calc.uid);
-  const stores = [...new Set(state.history.map(h => h.store).filter(Boolean))];
+  const last = state.history[0] || {};
   openSheet(`
-    <h2 class="text-lg font-black">購入履歴に保存</h2>
+    <h2 class="text-lg font-black">記録する</h2>
     <p class="text-sm text-sub mt-1">${p ? esc(p.brand + ' ' + p.name + ' ' + p.size) : '商品未選択'} ・ <span class="num">${yen(r.unit,1)}</span>/枚</p>
     <div class="mt-3 grid grid-cols-2 gap-2">
-      <label class="block"><span class="text-xs text-sub">購入日</span><input id="sDate" type="date" value="${todayStr()}" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>
-      <label class="block"><span class="text-xs text-sub">パック数</span><input id="sPacks" type="text" inputmode="numeric" value="1" class="num mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>
-      <label class="block col-span-2"><span class="text-xs text-sub">お店</span><input id="sStore" list="storeList" placeholder="例：ウエルシア ○○店" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line">
-        <datalist id="storeList">${stores.map(s => `<option value="${esc(s)}">`).join('')}</datalist></label>
+      ${kindToggleHtml('buy', 's')}
+      ${storeFieldsHtml({ chain: chainOf(last), branch: branchOf(last) }, 's')}
+      <label class="block"><span class="text-xs text-sub" id="sDateLabel">購入日</span><input id="sDate" type="date" value="${todayStr()}" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>
+      <label class="block" id="sPacksWrap"><span class="text-xs text-sub">パック数</span><input id="sPacks" type="text" inputmode="numeric" value="1" class="num mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>
       ${p ? '' : `<label class="block col-span-2"><span class="text-xs text-sub">商品名</span><input id="sName" placeholder="例：〇〇パンツ Lサイズ" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>`}
-      <label class="block col-span-2"><span class="text-xs text-sub">メモ</span><textarea id="sMemo" rows="3" placeholder="例：ポイント5倍デー、チラシ特価" class="mt-0.5 w-full px-3 py-2 rounded-xl bg-white border border-line"></textarea></label>
+      ${memoFieldHtml({}, 's')}
     </div>
+    <p class="mt-2 text-xs text-sub">「価格だけ記録」は支出に含めず、お店の比較にだけ使います。</p>
     <button type="button" id="sOk" class="mt-4 mb-2 w-full h-14 rounded-2xl bg-leaf text-white font-bold text-lg">保存する</button>
   `, root => {
     $('#sOk', root).onclick = async () => {
-      const packs = Math.max(1, Math.round(toNum($('#sPacks', root).value) || 1));
+      const kind = $('#sKind', root).dataset.value;
+      const packs = kind === 'check' ? 1 : Math.max(1, Math.round(toNum($('#sPacks', root).value) || 1));
+      const chain = $('#sChain', root).value.trim(), branch = $('#sBranch', root).value.trim();
+      if (!chain && !confirm('お店が未入力です。このまま保存しますか？')) return;
       const rec = {
+        kind,
         date: $('#sDate', root).value || todayStr(),
-        store: $('#sStore', root).value.trim(),
+        chain, branch, store: [chain, branch].filter(Boolean).join(' '),
         memo: $('#sMemo', root).value.trim(),
         uid: p ? p.uid : '',
         snapshot: p ? { jan_code:p.jan_code, maker:p.maker, brand:p.brand, name:p.name, size:p.size } : { jan_code:'', maker:'', brand:'', name: ($('#sName', root)?.value.trim() || '商品名なし'), size:'' },
@@ -917,37 +1007,54 @@ $('#cSave').addEventListener('click', () => {
         refUnit: p ? p.refUnit : null, createdAt: Date.now()
       };
       try { await DB.put('history', rec); } catch(e){ return toast('保存に失敗しました：' + e.message); }
-      await loadHistory(); closeSheet(); calc(); renderProducts(); toast('購入履歴に保存しました');
+      await loadHistory(); closeSheet(); calc(); renderProducts(); toast(kind === 'check' ? '価格を記録しました' : '購入履歴に保存しました');
     };
   });
 });
 
 /* ========================= 履歴 ========================= */
 $('#hq').addEventListener('input', renderHistory);
+state.hmode = 'list';
+$$('.hmode').forEach(b => b.addEventListener('click', () => { state.hmode = b.dataset.hmode; renderHistory(); }));
 function renderHistory(){
+  $$('.hmode').forEach(b => { const on = b.dataset.hmode === state.hmode; b.setAttribute('aria-pressed', on); b.className = 'hmode h-10 rounded-xl text-sm font-bold ' + (on ? 'bg-ink text-white' : 'text-sub'); });
   const ym = todayStr().slice(0,7);
-  const month = state.history.filter(h => (h.date || '').startsWith(ym));
+  const buys = state.history.filter(isBuy);
+  const month = buys.filter(h => (h.date || '').startsWith(ym));
   $('#sMonth').textContent = yen(month.reduce((s,h) => s + (h.total || 0), 0));
   $('#sCount').textContent = month.length + '件';
-  const sheets = state.history.reduce((s,h) => s + h.qty * (h.packs || 1), 0);
-  const spent = state.history.reduce((s,h) => s + (h.total || 0), 0);
+  const sheets = buys.reduce((s,h) => s + h.qty * (h.packs || 1), 0);
+  const spent = buys.reduce((s,h) => s + (h.total || 0), 0);
   $('#sAvg').textContent = sheets ? yen(spent / sheets, 1) : '—';
 
   const words = norm($('#hq').value).split(/\s+/).filter(Boolean);
   const xs = state.history.filter(h => {
     if (!words.length) return true;
     const s = h.snapshot || {};
-    const hay = norm([h.store, h.memo, s.brand, s.name, s.size, s.jan_code, h.date].join(' '));
+    const hay = norm([chainOf(h), branchOf(h), h.memo, s.brand, s.name, s.size, s.jan_code, h.date, isBuy(h) ? '購入' : '価格記録'].join(' '));
     return words.every(w => hay.includes(w));
   });
   if (!state.history.length){
     $('#historyList').innerHTML = `<li class="bg-paper border border-dashed border-line rounded-2xl p-6 text-center">
-      <p class="font-bold">まだ購入履歴がありません</p>
+      <p class="font-bold">まだ記録がありません</p>
       <p class="text-sm text-sub mt-1">「計算」で店頭価格を入れて、保存するとここに残ります。</p>
       <button type="button" class="mt-3 h-11 px-5 rounded-xl bg-leaf text-white font-bold" onclick="show('calc')">計算をはじめる</button></li>`;
     return;
   }
   if (!xs.length){ $('#historyList').innerHTML = `<li class="p-6 text-center text-sub text-sm">一致する履歴がありません。</li>`; return; }
+  if (state.hmode === 'compare'){
+    const keys = uniqueRecent(xs.map(itemKey));
+    $('#historyList').innerHTML = keys.map(k => {
+      const h0 = xs.find(h => itemKey(h) === k), s = h0.snapshot || {};
+      const rows = storeComparison(k);
+      return `<li class="bg-paper border border-line rounded-2xl p-3">
+        <div class="font-bold leading-snug px-1">${esc(s.brand)} ${esc(s.name)} <span class="num">${esc(s.size)}</span></div>
+        <div class="text-[11px] text-sub px-1 mb-2">${rows.length}店の記録${rows.length < 2 ? '（2店以上記録すると比べられます）' : ''}</div>
+        ${storeCompareHtml(rows)}
+      </li>`;
+    }).join('');
+    return;
+  }
   $('#historyList').innerHTML = xs.map(h => {
     const s = h.snapshot || {};
     const ratio = Number.isFinite(h.refUnit) && h.refUnit ? h.unitPrice / h.refUnit : NaN;
@@ -955,12 +1062,13 @@ function renderHistory(){
     return `<li><button type="button" data-hid="${h.id}" class="w-full text-left bg-paper border border-line rounded-2xl px-4 py-3 active:bg-mint/50">
       <div class="flex justify-between items-baseline gap-2">
         <span class="text-xs text-sub num">${esc(h.date)}</span>
-        <span class="text-xs text-sub truncate">${esc(h.store || '店名なし')}</span>
+        <span class="text-xs text-sub truncate">${isBuy(h) ? '' : '<span class="px-1.5 py-0.5 mr-1 rounded bg-mint text-ink font-bold">価格記録</span>'}${esc(storeLabel(h))}</span>
       </div>
       <div class="mt-0.5 flex justify-between items-end gap-3">
         <div class="min-w-0">
           <div class="font-bold leading-snug truncate">${esc(s.brand)} ${esc(s.name)} <span class="num">${esc(s.size)}</span></div>
-          <div class="text-xs text-sub num">${yen(h.pay)} × ${h.packs}パック（${h.qty}枚入）${v ? ` <span class="${v.c} font-bold">${v.t}</span>` : ''}</div>
+          <div class="text-xs text-sub num">${isBuy(h) ? `${yen(h.pay)} × ${h.packs}パック` : yen(h.pay)}（${h.qty}枚入）${v ? ` <span class="${v.c} font-bold">${v.t}</span>` : ''}</div>
+          ${h.memo ? `<div class="text-xs text-sub truncate">📝 ${esc(h.memo)}</div>` : ''}
         </div>
         <div class="text-right shrink-0"><div class="num text-lg font-semibold">${yen(h.unitPrice,1)}</div><div class="text-[11px] text-sub">/枚</div></div>
       </div>
@@ -974,7 +1082,7 @@ function openHistory(id){
   const s = h.snapshot || {};
   const row = (k, v) => `<dt class="text-sub">${k}</dt><dd class="text-right num">${v}</dd>`;
   openSheet(`
-    <div class="text-xs text-sub num">${esc(h.date)}　${esc(h.store || '店名なし')}</div>
+    <div class="text-xs text-sub num">${esc(h.date)}　${esc(storeLabel(h))}${isBuy(h) ? '' : '（価格だけ記録）'}</div>
     <h2 class="text-xl font-black leading-snug">${esc(s.brand)} ${esc(s.name)} <span class="num">${esc(s.size)}</span></h2>
     ${s.jan_code ? `<div class="text-xs text-sub num">JAN ${esc(s.jan_code)}</div>` : ''}
     <div class="mt-3 flex items-end justify-between rounded-2xl bg-sage px-4 py-3">
@@ -989,15 +1097,23 @@ function openHistory(id){
       ${row('合計', yen(h.total))}
       ${row('入数 / 吸収回数', `${h.qty}枚 / ${h.times ?? '—'}回`)}
     </dl>
-    <label class="block mt-3"><span class="text-xs text-sub">お店</span><input id="eStore" value="${esc(h.store)}" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>
-    <label class="block mt-2"><span class="text-xs text-sub">メモ</span><textarea id="eMemo" rows="3" class="mt-0.5 w-full px-3 py-2 rounded-xl bg-white border border-line">${esc(h.memo)}</textarea></label>
+    <div class="mt-3 grid grid-cols-2 gap-2">
+      ${kindToggleHtml(isBuy(h) ? 'buy' : 'check', 'e')}
+      ${storeFieldsHtml(h, 'e')}
+      ${memoFieldHtml(h, 'e')}
+    </div>
     <div class="mt-3 grid grid-cols-3 gap-2 mb-2">
       <button type="button" id="hDel" class="h-12 rounded-xl border border-bad text-bad font-bold">削除</button>
       <button type="button" id="hRe" class="h-12 rounded-xl border border-line font-bold">再計算</button>
       <button type="button" id="hSave" class="h-12 rounded-xl bg-ink text-white font-bold">保存</button>
     </div>
   `, root => {
-    $('#hSave', root).onclick = async () => { h.store = $('#eStore', root).value.trim(); h.memo = $('#eMemo', root).value.trim(); await DB.put('history', h); await loadHistory(); renderHistory(); closeSheet(); toast('変更を保存しました'); };
+    $('#hSave', root).onclick = async () => {
+      h.kind = $('#eKind', root).dataset.value;
+      if (h.kind === 'check'){ h.packs = 1; h.total = h.pay; }
+      h.chain = $('#eChain', root).value.trim(); h.branch = $('#eBranch', root).value.trim();
+      h.store = [h.chain, h.branch].filter(Boolean).join(' ');
+      h.memo = $('#eMemo', root).value.trim(); await DB.put('history', h); await loadHistory(); renderHistory(); closeSheet(); toast('変更を保存しました'); };
     $('#hDel', root).onclick = async () => { if (!confirm('この履歴を削除しますか？')) return; await DB.del('history', h.id); await loadHistory(); renderHistory(); renderProducts(); closeSheet(); toast('履歴を削除しました'); };
     $('#hRe', root).onclick = () => {
       closeSheet();
