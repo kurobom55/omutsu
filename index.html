@@ -6,10 +6,19 @@
 <meta name="theme-color" content="#E9F0EC">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="おむつコスパ帳">
+<meta name="apple-mobile-web-app-title" content="おむつコスパ">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="format-detection" content="telephone=no">
 <title>おむつコスパ帳</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧾</text></svg>">
+<script>
+/* 表示設定（文字サイズ・くっきり）を描画前に適用 */
+try {
+  var d = JSON.parse(localStorage.getItem('omutsu-display') || '{}');
+  if (d.size) document.documentElement.dataset.size = d.size;
+  if (d.contrast) document.documentElement.dataset.contrast = d.contrast;
+} catch (e) {}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Outfit:wght@500;600;800&display=swap" rel="stylesheet">
@@ -35,9 +44,37 @@ tailwind.config = {
   html,body{ background:#E9F0EC; }
   body{ -webkit-tap-highlight-color:transparent; -webkit-text-size-adjust:100%; overscroll-behavior-y:none; }
   .num{ font-family:Outfit,"Zen Kaku Gothic New",sans-serif; font-variant-numeric:tabular-nums; }
-  input,select,textarea{ font-size:16px !important; } /* iOSのズーム防止 */
+  /* ---- 文字サイズ（rem基準で全体を拡大） ---- */
+  html{ font-size:16px; }
+  html[data-size="lg"]{ font-size:19px; }
+  html[data-size="xl"]{ font-size:22px; }
+  input,select,textarea{ font-size:max(16px,1rem); } /* iOSのズーム防止（クラス指定があればそちら優先） */
+  .app-main{ padding-bottom:calc(5.5rem + env(safe-area-inset-bottom,0px)); }
+  /* 特大：2列の入力欄などを1列に */
+  html[data-size="xl"] .fs-stack{ grid-template-columns:minmax(0,1fr) !important; }
+  html[data-size="xl"] .fs-stack > *{ grid-column:auto !important; }
+  html[data-size="xl"] dl.fs-stack dd{ text-align:left; margin-bottom:.35rem; }
+  /* 大きく・特大：集計カードを横長の行に */
+  html[data-size="lg"] .fs-summary, html[data-size="xl"] .fs-summary{ grid-template-columns:minmax(0,1fr) !important; gap:.4rem; }
+  html[data-size="lg"] .fs-summary > div, html[data-size="xl"] .fs-summary > div{ display:flex; justify-content:space-between; align-items:baseline; padding:.55rem 1rem; }
+  html[data-size="lg"] .fs-hide-big, html[data-size="xl"] .fs-hide-big{ display:none; }
+  /* ---- くっきり表示（コントラスト強め） ---- */
+  html[data-contrast="high"] body{ font-weight:500; }
+  html[data-contrast="high"] .text-sub{ color:#1B2B27 !important; }
+  html[data-contrast="high"] .text-leaf{ color:#07463D !important; }
+  html[data-contrast="high"] .text-good{ color:#0F5A2F !important; }
+  html[data-contrast="high"] .text-bad{ color:#8A2E0E !important; }
+  html[data-contrast="high"] .bg-paper{ background-color:#FFFFFF !important; }
+  html[data-contrast="high"] .border-line{ border-color:#5F7B72 !important; }
+  html[data-contrast="high"] .divide-line > * + *{ border-color:#5F7B72 !important; }
+  html[data-contrast="high"] input, html[data-contrast="high"] select, html[data-contrast="high"] textarea{ border-width:2px; }
+  html[data-contrast="high"] ::placeholder{ color:#4A625B !important; opacity:1; }
+  html[data-contrast="high"] .navbtn{ color:#1B2B27; }
+  html[data-contrast="high"] .navbtn[aria-current="page"]{ color:#07463D; background:#CFE6DD; }
+  html[data-contrast="high"] .chip[aria-pressed="false"]{ border-width:2px; }
+  html[data-contrast="high"] .chip[aria-pressed="true"]{ background-color:#16302B !important; color:#fff !important; border-color:#16302B !important; }
+  html[data-size="xl"] .app-title{ font-size:1rem; }
   .app-header{ padding-top:env(safe-area-inset-top,0px); }
-  .app-main{ padding-bottom:calc(88px + env(safe-area-inset-bottom,0px)); }
   .app-nav{ padding-bottom:env(safe-area-inset-bottom,0px); }
   .sheet{ padding-bottom:calc(20px + env(safe-area-inset-bottom,0px)); max-height:88vh; max-height:88dvh; }
   .no-scrollbar::-webkit-scrollbar{ display:none; } .no-scrollbar{ scrollbar-width:none; }
@@ -60,10 +97,15 @@ tailwind.config = {
 
 <header class="app-header sticky top-0 z-30 bg-sage/95 backdrop-blur border-b border-line">
   <div class="max-w-xl mx-auto px-4 h-14 flex items-center justify-between">
-    <h1 class="text-[19px] font-black tracking-tight">おむつコスパ帳</h1>
-    <button id="storageBadge" class="text-xs text-sub flex items-center gap-1.5 px-2 py-1 rounded-full border border-line bg-paper" type="button">
-      <span id="storageDot" class="w-2 h-2 rounded-full bg-line"></span><span id="storageText">確認中</span>
+    <h1 class="app-title text-[1.2rem] font-black tracking-tight truncate">おむつコスパ帳</h1>
+    <div class="flex items-center gap-2 shrink-0">
+    <button id="btnDisplay" type="button" aria-label="文字の大きさ・見やすさ" class="h-10 px-3 rounded-full bg-ink text-white font-bold flex items-center gap-1">
+      <span class="text-xs leading-none">あ</span><span class="text-lg leading-none">あ</span><span class="text-sm ml-0.5">文字</span>
     </button>
+    <button id="storageBadge" class="text-xs text-sub flex items-center gap-1.5 px-2 py-1 rounded-full border border-line bg-paper" type="button">
+      <span id="storageDot" class="w-2 h-2 rounded-full bg-line"></span><span id="storageText" class="fs-hide-big">確認中</span>
+    </button>
+    </div>
   </div>
 </header>
 
@@ -78,7 +120,7 @@ tailwind.config = {
           placeholder="商品名・ブランド・JANコード"
           class="w-full h-12 px-4 rounded-2xl bg-paper border border-line placeholder:text-sub/70 focus:outline-none focus:border-leaf">
       </label>
-      <button id="scanSearch" type="button" aria-label="バーコードで探す" class="h-12 px-3 rounded-2xl bg-ink text-white flex items-center gap-1 font-bold text-sm"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg><span>読取</span></button>
+      <button id="scanSearch" type="button" aria-label="バーコードで探す" class="h-12 px-3 rounded-2xl bg-ink text-white flex items-center gap-1 font-bold text-sm"><svg class="w-[1.4rem] h-[1.4rem]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg><span>読取</span></button>
     </div>
 
     <div class="mt-3 -mx-4 px-4 flex gap-2 overflow-x-auto no-scrollbar" id="makerChips" role="group" aria-label="メーカー"></div>
@@ -106,11 +148,11 @@ tailwind.config = {
       <label class="block flex-1 min-w-0"><span class="sr-only">商品を選ぶ</span>
         <select id="cProduct" class="w-full h-12 px-3 rounded-2xl bg-paper border border-line"></select>
       </label>
-      <button id="scanCalc" type="button" aria-label="バーコードで商品を選ぶ" class="h-12 w-12 shrink-0 rounded-2xl bg-ink text-white flex items-center justify-center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg></button>
+      <button id="scanCalc" type="button" aria-label="バーコードで商品を選ぶ" class="h-12 w-12 shrink-0 rounded-2xl bg-ink text-white flex items-center justify-center"><svg class="w-[1.4rem] h-[1.4rem]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg></button>
     </div>
     <p id="cRefLine" class="mt-1 text-xs text-sub min-h-[1rem]"></p>
 
-    <div class="mt-3 grid grid-cols-2 gap-3">
+    <div class="mt-3 grid grid-cols-2 gap-3 fs-stack">
       <label class="block col-span-2">
         <span class="text-sm font-bold">店頭価格</span>
         <div class="mt-1 flex items-stretch gap-2">
@@ -154,10 +196,10 @@ tailwind.config = {
 
     <!-- 結果レシート -->
     <div class="receipt mt-5 rounded-t-2xl px-5 pt-5 pb-7 shadow-[0_1px_0_#CBDAD3]" aria-live="polite">
-      <div class="flex items-end justify-between gap-3">
+      <div class="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
         <div>
           <div class="text-sm text-sub">1枚あたり</div>
-          <div class="num font-extrabold leading-none text-[56px] tracking-tight" id="rUnit">—</div>
+          <div class="num font-extrabold leading-none text-[3.5rem] tracking-tight" id="rUnit">—</div>
         </div>
         <div class="text-right pb-1">
           <div class="text-sm text-sub">1回あたり</div>
@@ -165,7 +207,7 @@ tailwind.config = {
         </div>
       </div>
       <div class="mt-4">
-        <div class="flex justify-between text-[11px] text-sub"><span>お得</span><span>参考価格</span><span>割高</span></div>
+        <div class="flex justify-between text-xs text-sub"><span>お得</span><span>参考価格</span><span>割高</span></div>
         <div class="relative mt-1 h-3 rounded-full gauge">
           <div class="absolute top-[-3px] bottom-[-3px] left-1/2 w-px bg-ink/40"></div>
           <div id="rMarker" class="absolute -top-1.5 w-6 h-6 -ml-3 rounded-full bg-white border-[3px] border-ink shadow transition-all duration-300" style="left:50%; opacity:0"></div>
@@ -173,13 +215,13 @@ tailwind.config = {
         <p id="rVerdict" class="mt-3 text-lg font-bold">価格を入れると判定します</p>
         <p id="rDetail" class="text-sm text-sub"></p>
       </div>
-      <dl class="mt-4 pt-3 border-t border-dashed border-line grid grid-cols-2 gap-y-1 text-sm">
+      <dl class="mt-4 pt-3 border-t border-dashed border-line grid grid-cols-2 gap-y-1 text-sm fs-stack">
         <dt class="text-sub">支払額（1パック）</dt><dd class="num text-right font-semibold" id="rPay">—</dd>
         <dt class="text-sub">記録上の最安（この商品）</dt><dd class="num text-right" id="rBest">—</dd>
       </dl>
     </div>
 
-    <div class="mt-4 grid grid-cols-3 gap-2">
+    <div class="mt-4 grid grid-cols-3 gap-2 fs-stack">
       <button id="cReset" type="button" class="h-14 rounded-2xl border border-line bg-paper font-bold">クリア</button>
       <button id="cSave" type="button" class="col-span-2 h-14 rounded-2xl bg-leaf text-white font-bold text-lg disabled:opacity-40" disabled>お店と一緒に記録</button>
     </div>
@@ -187,7 +229,7 @@ tailwind.config = {
 
   <!-- ===== 履歴 ===== -->
   <section id="view-history" data-view="history" hidden>
-    <div class="grid grid-cols-3 gap-2 text-center">
+    <div class="grid grid-cols-3 gap-2 text-center fs-summary">
       <div class="bg-paper border border-line rounded-2xl py-3"><div class="text-xs text-sub">今月の支出</div><div class="num font-bold text-lg" id="sMonth">¥0</div></div>
       <div class="bg-paper border border-line rounded-2xl py-3"><div class="text-xs text-sub">今月の購入</div><div class="num font-bold text-lg" id="sCount">0件</div></div>
       <div class="bg-paper border border-line rounded-2xl py-3"><div class="text-xs text-sub">平均単価</div><div class="num font-bold text-lg" id="sAvg">—</div></div>
@@ -203,6 +245,11 @@ tailwind.config = {
 
   <!-- ===== データ ===== -->
   <section id="view-settings" data-view="settings" hidden>
+    <div class="bg-paper border border-line rounded-2xl p-4 mb-3">
+      <h2 class="font-bold">文字の大きさ・見やすさ</h2>
+      <p class="mt-1 text-sm text-sub">画面の右上「文字」ボタンからも変えられます。</p>
+      <button id="btnDisplay2" type="button" class="mt-3 w-full h-12 rounded-xl bg-ink text-white font-bold">表示を変える</button>
+    </div>
     <div class="bg-paper border border-line rounded-2xl p-4">
       <h2 class="font-bold">保存の状態</h2>
       <p id="persistInfo" class="mt-1 text-sm text-sub leading-relaxed"></p>
@@ -247,20 +294,20 @@ tailwind.config = {
 <nav class="app-nav fixed bottom-0 inset-x-0 z-30 bg-paper/95 backdrop-blur border-t border-line">
   <div class="max-w-xl mx-auto grid grid-cols-4 h-16 text-sub">
     <button class="navbtn flex flex-col items-center justify-center gap-0.5" data-go="search" type="button">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <span class="text-[11px] font-bold">探す</span><span class="navdot w-1 h-1 rounded-full bg-leaf opacity-0"></span>
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <span class="text-xs font-bold">探す</span><span class="navdot w-1 h-1 rounded-full bg-leaf opacity-0"></span>
     </button>
     <button class="navbtn flex flex-col items-center justify-center gap-0.5" data-go="calc" type="button">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h2M14 12h2M8 16h2M14 16h2"/></svg>
-      <span class="text-[11px] font-bold">計算</span><span class="navdot w-1 h-1 rounded-full bg-leaf opacity-0"></span>
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h2M14 12h2M8 16h2M14 16h2"/></svg>
+      <span class="text-xs font-bold">計算</span><span class="navdot w-1 h-1 rounded-full bg-leaf opacity-0"></span>
     </button>
     <button class="navbtn flex flex-col items-center justify-center gap-0.5" data-go="history" type="button">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>
-      <span class="text-[11px] font-bold">履歴</span><span class="navdot w-1 h-1 rounded-full bg-leaf opacity-0"></span>
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>
+      <span class="text-xs font-bold">履歴</span><span class="navdot w-1 h-1 rounded-full bg-leaf opacity-0"></span>
     </button>
     <button class="navbtn flex flex-col items-center justify-center gap-0.5" data-go="settings" type="button">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>
-      <span class="text-[11px] font-bold">データ</span><span class="navdot w-1 h-1 rounded-full bg-leaf opacity-0"></span>
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>
+      <span class="text-xs font-bold">データ</span><span class="navdot w-1 h-1 rounded-full bg-leaf opacity-0"></span>
     </button>
   </div>
 </nav>
@@ -306,7 +353,7 @@ tailwind.config = {
   </div>
 </div>
 
-<div id="toast" class="fixed left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full bg-ink text-white text-sm font-bold opacity-0 pointer-events-none transition-opacity" style="bottom:calc(84px + env(safe-area-inset-bottom,0px))"></div>
+<div id="toast" class="fixed left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full bg-ink text-white text-sm font-bold opacity-0 pointer-events-none transition-opacity" style="bottom:calc(5.25rem + env(safe-area-inset-bottom,0px))"></div>
 
 <script>
 /* =========================================================
@@ -510,15 +557,15 @@ function storeCompareHtml(rows){
   const min = rows[0].latest.unitPrice;
   return `<ol class="divide-y divide-line rounded-xl border border-line bg-white overflow-hidden">${rows.map((g, i) => {
     const diff = g.latest.unitPrice - min;
-    return `<li class="px-3 py-2.5 flex items-center gap-3">
+    return `<li class="px-3 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
       <span class="num w-6 h-6 shrink-0 rounded-full text-xs font-bold flex items-center justify-center ${i === 0 ? 'bg-good text-white' : 'bg-sage text-sub'}">${i + 1}</span>
-      <div class="flex-1 min-w-0">
-        <div class="font-bold text-sm truncate">${esc(g.label)}</div>
-        <div class="text-[11px] text-sub num">${esc(g.latest.date)}（${daysAgo(g.latest.date)}）・${yen(g.latest.pay)}/${g.latest.qty}枚${g.count > 1 ? `・最安 ${yen(g.best.unitPrice,1)}` : ''}${g.latest.memo ? '・' + esc(g.latest.memo) : ''}</div>
+      <div class="flex-1 min-w-[8rem]">
+        <div class="font-bold text-sm break-words">${esc(g.label)}</div>
+        <div class="text-xs text-sub num">${esc(g.latest.date)}（${daysAgo(g.latest.date)}）・${yen(g.latest.pay)}/${g.latest.qty}枚${g.count > 1 ? `・最安 ${yen(g.best.unitPrice,1)}` : ''}${g.latest.memo ? '・' + esc(g.latest.memo) : ''}</div>
       </div>
-      <div class="text-right shrink-0">
-        <div class="num font-semibold">${yen(g.latest.unitPrice,1)}<span class="text-[11px] text-sub">/枚</span></div>
-        <div class="text-[11px] num ${i === 0 ? 'text-good font-bold' : 'text-sub'}">${i === 0 ? (rows.length > 1 ? 'いちばん安い' : '') : '+' + yen(diff,1)}</div>
+      <div class="text-right shrink-0 ml-auto">
+        <div class="num font-semibold">${yen(g.latest.unitPrice,1)}<span class="text-xs text-sub">/枚</span></div>
+        <div class="text-xs num ${i === 0 ? 'text-good font-bold' : 'text-sub'}">${i === 0 ? (rows.length > 1 ? 'いちばん安い' : '') : '+' + yen(diff,1)}</div>
       </div>
     </li>`; }).join('')}</ol>`;
 }
@@ -567,6 +614,7 @@ $$('.navbtn').forEach(b => b.addEventListener('click', () => show(b.dataset.go))
 
 /* ========================= ボトムシート ========================= */
 function openSheet(html, onMount){
+  $('#sheetBody').onclick = null;
   $('#sheetBody').innerHTML = html;
   const wrap = $('#sheetWrap'); wrap.classList.remove('hidden');
   const sh = $('#sheet'); sh.classList.remove('sheet-enter'); void sh.offsetWidth; sh.classList.add('sheet-enter');
@@ -804,7 +852,7 @@ function renderProducts(){
       </div>
       <div class="text-right shrink-0">
         <div class="num text-xl font-semibold leading-tight">${yen(p.refUnit,1)}</div>
-        <div class="text-[11px] text-sub">/枚</div>
+        <div class="text-xs text-sub">/枚</div>
         <div class="num text-sm text-sub mt-0.5">${Number.isFinite(p.refUse) ? yen(p.refUse,1) + '/回' : '—'}</div>
       </div>
     </button></li>`;
@@ -814,7 +862,7 @@ $('#productList').addEventListener('click', e => { const b = e.target.closest('[
 
 function productForm(p){
   const f = (id, label, val, attrs='') => `<label class="block"><span class="text-xs text-sub">${label}</span><input id="${id}" value="${esc(val)}" ${attrs} class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>`;
-  return `<div class="grid grid-cols-2 gap-2">
+  return `<div class="grid grid-cols-2 gap-2 fs-stack">
     <div class="col-span-2"><span class="text-xs text-sub">JANコード</span>
       <div class="mt-0.5 flex gap-2">
         <input id="pJan" value="${esc(p.jan_code || '')}" inputmode="numeric" maxlength="13" placeholder="13桁（任意）" class="num flex-1 min-w-0 h-11 px-3 rounded-xl bg-white border border-line">
@@ -858,9 +906,9 @@ function openProduct(uid){
     <div class="text-xs text-sub">${esc(p.maker)}<span class="mx-1">/</span>${esc(p.brand)}</div>
     <h2 class="text-xl font-black leading-snug">${esc(p.name)} <span class="num">${esc(p.size)}</span></h2>
     <div class="mt-3 grid grid-cols-3 gap-2 text-center">
-      <div class="rounded-xl bg-sage py-2"><div class="text-[11px] text-sub">参考価格</div><div class="num font-bold">${yen(p.standard_price_jpy)}</div></div>
-      <div class="rounded-xl bg-sage py-2"><div class="text-[11px] text-sub">1枚</div><div class="num font-bold">${yen(p.refUnit,1)}</div></div>
-      <div class="rounded-xl bg-sage py-2"><div class="text-[11px] text-sub">1回</div><div class="num font-bold">${yen(p.refUse,1)}</div></div>
+      <div class="rounded-xl bg-sage py-2"><div class="text-xs text-sub">参考価格</div><div class="num font-bold">${yen(p.standard_price_jpy)}</div></div>
+      <div class="rounded-xl bg-sage py-2"><div class="text-xs text-sub">1枚</div><div class="num font-bold">${yen(p.refUnit,1)}</div></div>
+      <div class="rounded-xl bg-sage py-2"><div class="text-xs text-sub">1回</div><div class="num font-bold">${yen(p.refUse,1)}</div></div>
     </div>
     <h3 class="mt-4 mb-1.5 font-bold text-sm">お店ごとの価格（最新の記録）</h3>
     ${storeCompareHtml(storeComparison(uid))}
@@ -978,7 +1026,7 @@ $('#cSave').addEventListener('click', () => {
   openSheet(`
     <h2 class="text-lg font-black">記録する</h2>
     <p class="text-sm text-sub mt-1">${p ? esc(p.brand + ' ' + p.name + ' ' + p.size) : '商品未選択'} ・ <span class="num">${yen(r.unit,1)}</span>/枚</p>
-    <div class="mt-3 grid grid-cols-2 gap-2">
+    <div class="mt-3 grid grid-cols-2 gap-2 fs-stack">
       ${kindToggleHtml('buy', 's')}
       ${storeFieldsHtml({ chain: chainOf(last), branch: branchOf(last) }, 's')}
       <label class="block"><span class="text-xs text-sub" id="sDateLabel">購入日</span><input id="sDate" type="date" value="${todayStr()}" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>
@@ -1049,7 +1097,7 @@ function renderHistory(){
       const rows = storeComparison(k);
       return `<li class="bg-paper border border-line rounded-2xl p-3">
         <div class="font-bold leading-snug px-1">${esc(s.brand)} ${esc(s.name)} <span class="num">${esc(s.size)}</span></div>
-        <div class="text-[11px] text-sub px-1 mb-2">${rows.length}店の記録${rows.length < 2 ? '（2店以上記録すると比べられます）' : ''}</div>
+        <div class="text-xs text-sub px-1 mb-2">${rows.length}店の記録${rows.length < 2 ? '（2店以上記録すると比べられます）' : ''}</div>
         ${storeCompareHtml(rows)}
       </li>`;
     }).join('');
@@ -1070,7 +1118,7 @@ function renderHistory(){
           <div class="text-xs text-sub num">${isBuy(h) ? `${yen(h.pay)} × ${h.packs}パック` : yen(h.pay)}（${h.qty}枚入）${v ? ` <span class="${v.c} font-bold">${v.t}</span>` : ''}</div>
           ${h.memo ? `<div class="text-xs text-sub truncate">📝 ${esc(h.memo)}</div>` : ''}
         </div>
-        <div class="text-right shrink-0"><div class="num text-lg font-semibold">${yen(h.unitPrice,1)}</div><div class="text-[11px] text-sub">/枚</div></div>
+        <div class="text-right shrink-0"><div class="num text-lg font-semibold">${yen(h.unitPrice,1)}</div><div class="text-xs text-sub">/枚</div></div>
       </div>
     </button></li>`;
   }).join('');
@@ -1089,7 +1137,7 @@ function openHistory(id){
       <div><div class="text-xs text-sub">1枚あたり</div><div class="num text-4xl font-extrabold">${yen(h.unitPrice,1)}</div></div>
       <div class="text-right"><div class="text-xs text-sub">1回あたり</div><div class="num text-xl font-semibold">${h.perUse != null ? yen(h.perUse,1) : '—'}</div></div>
     </div>
-    <dl class="mt-3 grid grid-cols-2 gap-y-1.5 text-sm">
+    <dl class="mt-3 grid grid-cols-2 gap-y-1.5 text-sm fs-stack">
       ${row('店頭価格', yen(h.shelfPrice) + (h.tax === 'ex' ? '（税抜）' : '（税込）'))}
       ${row('割引', (h.discountPct ? h.discountPct + '%' : '') + (h.discountYen ? ' −' + yen(h.discountYen) : '') || 'なし')}
       ${row('支払額 / パック', yen(h.pay))}
@@ -1097,7 +1145,7 @@ function openHistory(id){
       ${row('合計', yen(h.total))}
       ${row('入数 / 吸収回数', `${h.qty}枚 / ${h.times ?? '—'}回`)}
     </dl>
-    <div class="mt-3 grid grid-cols-2 gap-2">
+    <div class="mt-3 grid grid-cols-2 gap-2 fs-stack">
       ${kindToggleHtml(isBuy(h) ? 'buy' : 'check', 'e')}
       ${storeFieldsHtml(h, 'e')}
       ${memoFieldHtml(h, 'e')}
@@ -1235,10 +1283,68 @@ $('#btnResetProducts').addEventListener('click', async () => {
   await refreshProducts(); toast('商品の編集を戻しました');
 });
 
+/* ========================= 表示設定 ========================= */
+const SIZE_OPTIONS = [ { v:'md', t:'標準', px:16 }, { v:'lg', t:'大きく', px:19 }, { v:'xl', t:'特大', px:22 } ];
+function currentDisplay(){
+  const el = document.documentElement;
+  return { size: el.dataset.size || 'md', contrast: el.dataset.contrast || 'normal' };
+}
+function applyDisplay(d, save = true){
+  const el = document.documentElement;
+  el.dataset.size = d.size || 'md';
+  el.dataset.contrast = d.contrast || 'normal';
+  if (!save) return;
+  try { localStorage.setItem('omutsu-display', JSON.stringify(d)); } catch(e){}
+  DB.put('meta', { key:'display', value:d }).catch(() => {});
+}
+function openDisplaySettings(){
+  const render = () => {
+    const d = currentDisplay();
+    const btn = (on, inner, attrs) => `<button type="button" ${attrs} aria-pressed="${on}" class="rounded-2xl border-2 ${on ? 'border-ink bg-ink text-white' : 'border-line bg-white text-ink'} font-bold flex flex-col items-center justify-center py-3 gap-1">${inner}</button>`;
+    return `
+      <h2 class="text-xl font-black">文字の大きさ・見やすさ</h2>
+      <p class="mt-1 text-sm text-sub">押すとすぐに画面に反映されます。</p>
+      <h3 class="mt-4 font-bold">文字の大きさ</h3>
+      <div class="mt-2 grid grid-cols-3 gap-2">
+        ${SIZE_OPTIONS.map(o => btn(d.size === o.v, `<span style="font-size:${o.px * 1.6}px;line-height:1">あ</span><span class="text-sm">${o.t}</span>`, `data-dsize="${o.v}"`)).join('')}
+      </div>
+      <h3 class="mt-4 font-bold">見やすさ</h3>
+      <div class="mt-2 grid grid-cols-2 gap-2">
+        ${btn(d.contrast !== 'high', '<span>ふつう</span>', 'data-dcontrast="normal"')}
+        ${btn(d.contrast === 'high', '<span>くっきり</span><span class="text-xs font-normal">文字を濃く・線を太く</span>', 'data-dcontrast="high"')}
+      </div>
+      <div class="mt-4 rounded-2xl border border-line bg-paper p-4">
+        <div class="text-xs text-sub">見本</div>
+        <div class="font-bold">アテント うす型さらさらパンツ M</div>
+        <div class="flex justify-between items-baseline"><span class="text-sm text-sub">1枚あたり</span><span class="num text-2xl font-semibold">¥46.2</span></div>
+      </div>
+      <button type="button" data-dclose class="mt-4 mb-2 w-full h-14 rounded-2xl bg-leaf text-white font-bold text-lg">これで決定</button>`;
+  };
+  openSheet(render(), root => {
+    root.onclick = e => {
+      const s = e.target.closest('[data-dsize]'), c = e.target.closest('[data-dcontrast]');
+      if (s || c){
+        const d = currentDisplay();
+        if (s) d.size = s.dataset.dsize;
+        if (c) d.contrast = c.dataset.dcontrast;
+        applyDisplay(d); root.innerHTML = render();
+        return;
+      }
+      if (e.target.closest('[data-dclose]')) closeSheet();
+    };
+  });
+}
+$('#btnDisplay').addEventListener('click', openDisplaySettings);
+$('#btnDisplay2').addEventListener('click', openDisplaySettings);
+
 /* ========================= 起動 ========================= */
 (async function init(){
   await DB.ready();
   try { if (navigator.storage?.persist && !(await navigator.storage.persisted())) navigator.storage.persist(); } catch(e){}
+  // localStorage が消えていても IndexedDB から表示設定を復元
+  try {
+    if (!localStorage.getItem('omutsu-display')){ const m = await DB.get('meta', 'display'); if (m && m.value) applyDisplay(m.value); }
+  } catch(e){}
   await loadProducts(); await loadHistory();
   renderChips(); renderProducts(); fillCalcSelect(); syncTax(); calc(); renderBadge();
   const start = location.hash.slice(1);
