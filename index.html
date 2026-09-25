@@ -6,10 +6,10 @@
 <meta name="theme-color" content="#E9F0EC">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="おむつコスパ">
+<meta name="apple-mobile-web-app-title" content="コスパ帳">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="format-detection" content="telephone=no">
-<title>おむつコスパ帳</title>
+<title>コスパ帳</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧾</text></svg>">
 <script>
 /* 表示設定（文字サイズ・くっきり）を描画前に適用 */
@@ -97,7 +97,7 @@ tailwind.config = {
 
 <header class="app-header sticky top-0 z-30 bg-sage/95 backdrop-blur border-b border-line">
   <div class="max-w-xl mx-auto px-4 h-14 flex items-center justify-between">
-    <h1 class="app-title text-[1.2rem] font-black tracking-tight truncate">おむつコスパ帳</h1>
+    <h1 class="app-title text-[1.2rem] font-black tracking-tight truncate">コスパ帳</h1>
     <div class="flex items-center gap-2 shrink-0">
     <button id="btnDisplay" type="button" aria-label="文字の大きさ・見やすさ" class="h-10 px-3 rounded-full bg-ink text-white font-bold flex items-center gap-1">
       <span class="text-xs leading-none">あ</span><span class="text-lg leading-none">あ</span><span class="text-sm ml-0.5">文字</span>
@@ -106,6 +106,9 @@ tailwind.config = {
       <span id="storageDot" class="w-2 h-2 rounded-full bg-line"></span><span id="storageText" class="fs-hide-big">確認中</span>
     </button>
     </div>
+  </div>
+  <div id="catWrap" class="max-w-xl mx-auto px-4 pb-2">
+    <div id="catBar" class="grid grid-cols-3 gap-1 p-1 rounded-2xl border border-line bg-paper" role="group" aria-label="品目の切り替え"></div>
   </div>
 </header>
 
@@ -128,11 +131,9 @@ tailwind.config = {
 
     <div class="mt-3 flex items-center justify-between text-sm">
       <span id="resultCount" class="text-sub"></span>
-      <label class="flex items-center gap-1 text-sub">並び順
+      <label class="flex items-center gap-1 text-sub whitespace-nowrap"><span class="fs-hide-big">並び順</span>
         <select id="sort" class="bg-transparent font-bold text-ink py-1">
-          <option value="unit">1枚が安い順</option>
-          <option value="use">1回が安い順</option>
-          <option value="maker">メーカー順</option>
+          <option value="main">安い順</option>
         </select>
       </label>
     </div>
@@ -168,13 +169,18 @@ tailwind.config = {
         </div>
       </label>
       <label class="block">
-        <span class="text-sm font-bold">入数（枚）</span>
+        <span class="text-sm font-bold" id="lQty">入数（枚）</span>
         <input id="cQty" type="text" inputmode="numeric" class="num mt-1 w-full h-12 px-3 rounded-2xl bg-paper border border-line text-lg">
       </label>
       <label class="block">
-        <span class="text-sm font-bold">吸収回数（回/枚）</span>
+        <span class="text-sm font-bold" id="lTimes">吸収回数（回/枚）</span>
         <input id="cTimes" type="text" inputmode="decimal" class="num mt-1 w-full h-12 px-3 rounded-2xl bg-paper border border-line text-lg">
       </label>
+      <div class="col-span-2" id="plyRow" hidden>
+        <span class="text-sm font-bold" id="lPly">巻き</span>
+        <div class="mt-1 flex gap-2 flex-wrap" id="plyChips"></div>
+        <p class="mt-1 text-xs text-sub" id="plyNote"></p>
+      </div>
       <div class="col-span-2">
         <span class="text-sm font-bold">割引</span>
         <div class="mt-1 flex gap-2 flex-wrap" id="pctChips">
@@ -199,11 +205,12 @@ tailwind.config = {
     <div class="receipt mt-5 rounded-t-2xl px-5 pt-5 pb-7 shadow-[0_1px_0_#CBDAD3]" aria-live="polite">
       <div class="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
         <div>
-          <div class="text-sm text-sub">1枚あたり</div>
+          <div class="text-sm text-sub" id="rMainLabel">1枚あたり</div>
           <div class="num font-extrabold leading-none text-[3.5rem] tracking-tight" id="rUnit">—</div>
+          <div class="text-xs text-sub mt-1" id="rRaw"></div>
         </div>
         <div class="text-right pb-1">
-          <div class="text-sm text-sub">1回あたり</div>
+          <div class="text-sm text-sub" id="rSubLabel">1回あたり</div>
           <div class="num font-semibold text-2xl" id="rUse">—</div>
         </div>
       </div>
@@ -230,6 +237,7 @@ tailwind.config = {
 
   <!-- ===== 履歴 ===== -->
   <section id="view-history" data-view="history" hidden>
+    <p id="histCatLabel" class="mb-2 font-bold"></p>
     <div class="grid grid-cols-3 gap-2 text-center fs-summary">
       <div class="bg-paper border border-line rounded-2xl py-3"><div class="text-xs text-sub">今月の支出</div><div class="num font-bold text-lg" id="sMonth">¥0</div></div>
       <div class="bg-paper border border-line rounded-2xl py-3"><div class="text-xs text-sub">今月の購入</div><div class="num font-bold text-lg" id="sCount">0件</div></div>
@@ -508,20 +516,78 @@ const searchUrl = kw => 'https://www.google.com/search?q=' + encodeURIComponent(
 const productByJan = jan => state.products.find(p => p.jan_code && p.jan_code === jan);
 function masterUid(m){ return 'm:' + (m.jan_code || [m.brand, m.name, m.size, m.quantity].join('|')); }
 
+/* ========================= 品目（カテゴリ） =========================
+   count  = 1パックの入数（枚 / ロール / 箱）
+   amount = 1個あたりの量（吸収回数 / 1ロールの長さm / 1箱の組数）→ 商品・履歴では times に保存
+   main   = いちばん大事な比較単価（おむつは1枚、トイレットペーパーは1m、ティッシュは100組）
+   ==================================================================== */
+const CATEGORIES = [
+  { id:'diaper', label:'おむつ', tab:'おむつ', icon:'🩲', countUnit:'枚', amountName:'吸収回数', amountUnit:'回', amountScale:1, main:'count',
+    mainLabel:'1枚あたり', mainSuffix:'/枚', mainDec:1, subLabel:'1回あたり', subSuffix:'/回', subDec:1,
+    variantName:'サイズ', variantHint:'M, L, M-L など', hasGender:true, amountRequired:false },
+  { id:'toilet', label:'トイレットペーパー', tab:'トイレット<br>ペーパー', icon:'🧻', countUnit:'ロール', amountName:'1ロールの長さ', amountUnit:'m', amountScale:1, main:'amount',
+    mainLabel:'1mあたり（シングル換算）', mainSuffix:'/m', mainDec:2, subLabel:'1ロールあたり', subSuffix:'/ロール', subDec:1,
+    variantName:'巻き', variantHint:'シングル / ダブル', hasGender:false, amountRequired:true,
+    plyLabel:'巻き', plyBase:1, plyOptions:[{ v:1, t:'シングル' }, { v:2, t:'ダブル' }, { v:3, t:'トリプル' }], plyIsVariant:true,
+    plyNote:'ダブルは紙が2枚重ねなので、長さ×2でシングルと同じ土俵にして比べます' },
+  { id:'tissue', label:'ティッシュ', tab:'ティッシュ', icon:'🤧', countUnit:'箱', amountName:'1箱の組数', amountUnit:'組', amountScale:100, main:'amount',
+    mainLabel:'100組あたり', mainSuffix:'/100組', mainDec:1, subLabel:'1箱あたり', subSuffix:'/箱', subDec:1,
+    variantName:'種類', variantHint:'保湿 / コンパクト など（任意）', hasGender:false, amountRequired:true,
+    plyLabel:'重ね', plyBase:2, plyOptions:[{ v:2, t:'2枚重ね' }, { v:3, t:'3枚重ね' }], hasSheetSize:true,
+    plyNote:'3枚重ねは1組の紙が1.5倍なので、2枚重ねに換算して比べます' }
+];
+const CAT = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
+const catOf = id => CAT[id] || CAT.diaper;
+// シングル/ダブル、2枚重ね/3枚重ね
+function plyFromText(cat, text){
+  if (!cat.plyOptions) return null;
+  const t = norm(text);
+  if (cat.id === 'toilet'){ if (/トリプル|3枚重|3重/.test(t)) return 3; if (/ダブル|2枚重|2重/.test(t)) return 2; if (/シングル|1枚/.test(t)) return 1; }
+  if (cat.id === 'tissue'){ if (/3枚重|3枚/.test(t)) return 3; if (/2枚重/.test(t)) return 2; }
+  return null;
+}
+const plyText = (cat, ply) => (cat.plyOptions || []).find(o => o.v === ply)?.t || '';
+const plyFactor = (cat, ply) => cat.plyOptions && ply > 0 ? ply / cat.plyBase : 1;
+// 価格 → 各種単価（main は重ね枚数で換算、raw は表示どおりの量）
+function metrics(cat, pay, qty, amount, ply){
+  const f = plyFactor(cat, ply);
+  const perCount = qty > 0 ? pay / qty : NaN;
+  const rawAmount = qty > 0 && amount > 0 ? pay / (qty * amount) * cat.amountScale : NaN;
+  const perAmount = rawAmount / f;
+  return { perCount, perAmount, rawAmount, factor:f, main: cat.main === 'amount' ? perAmount : perCount, sub: cat.main === 'amount' ? perCount : perAmount };
+}
+const fmtMain = (cat, v) => Number.isFinite(v) ? yen(v, cat.mainDec) : '—';
+const fmtSub = (cat, v) => Number.isFinite(v) ? yen(v, cat.subDec) : '—';
+
 /* ========================= 状態 ========================= */
 const state = {
   products: [], history: [],
-  filter: { q:'', maker:'すべて', size:'すべて', sort:'unit' },
+  filter: { q:'', maker:'すべて', size:'すべて', sort:'main' },
   calc: { uid:'', tax:'in' },
-  view: 'search'
+  view: 'search',
+  cat: (() => { try { return localStorage.getItem('omutsu-cat') || 'diaper'; } catch(e){ return 'diaper'; } })()
 };
+if (!CAT[state.cat]) state.cat = 'diaper';
+const curCat = () => catOf(state.cat);
 
 function normalizeProduct(p){
-  const times = (p.times != null && p.times !== '' && Number.isFinite(Number(p.times))) ? Number(p.times) : parseTimes(p.absorbency_level);
+  const category = CAT[p.category] ? p.category : 'diaper';
+  const cat = catOf(category);
+  const explicit = (p.times != null && p.times !== '' && Number.isFinite(Number(p.times))) ? Number(p.times) : null;
+  const times = explicit != null ? explicit : (category === 'diaper' ? parseTimes(p.absorbency_level) : null);
   const qty = Number(p.quantity) || 0, price = Number(p.standard_price_jpy) || 0;
-  const refUnit = qty ? price / qty : NaN;
-  return { ...p, quantity:qty, standard_price_jpy:price, times, refUnit, refUse: times ? refUnit / times : NaN };
+  const ply = cat.plyOptions ? (Number(p.ply) || plyFromText(cat, p.size) || cat.plyBase) : null;
+  const m = price > 0 ? metrics(cat, price, qty, times, ply) : { main:NaN, sub:NaN, perCount:NaN, rawAmount:NaN };
+  return { ...p, category, quantity:qty, standard_price_jpy:price, times, ply, refMain:m.main, refSub:m.sub, refRaw:m.rawAmount, refUnit:m.perCount };
 }
+const catProducts = () => state.products.filter(p => p.category === state.cat);
+// 履歴：品目・比較単価（旧データはおむつ・1枚単価として扱う）
+function historyCat(h){ return CAT[h.category] ? h.category : (productBy(h.uid)?.category || 'diaper'); }
+function mainOf(h){
+  if (Number.isFinite(h.mainPrice)) return h.mainPrice;
+  return catOf(historyCat(h)).main === 'amount' ? h.perUse : h.unitPrice;
+}
+const refOf = h => Number.isFinite(h.refMain) ? h.refMain : h.refUnit;
 async function loadProducts(){
   const stored = await DB.getAll('products');
   const byUid = new Map(stored.map(p => [p.uid, p]));
@@ -538,7 +604,7 @@ async function loadHistory(){
 const productBy = uid => state.products.find(p => p.uid === uid);
 
 /* ---- お店（チェーン名＋店舗名）まわり ---- */
-const CHAIN_PRESETS = ['コスモス薬品（ドラッグストアコスモス）','ウエルシア','ツルハドラッグ','マツモトキヨシ','スギ薬局','サンドラッグ','ココカラファイン','クリエイトSD','カワチ薬品','クスリのアオキ','Amazon','LOHACO','楽天市場'];
+const CHAIN_PRESETS = ['コスモス薬品（ドラッグストアコスモス）','ウエルシア','ツルハドラッグ','マツモトキヨシ','スギ薬局','サンドラッグ','ココカラファイン','クリエイトSD','カワチ薬品','クスリのアオキ','イオン','カインズ','コーナン','Amazon','LOHACO','楽天市場'];
 const MEMO_TAGS = ['ポイント5倍','チラシ特価','会員価格','クーポン利用','まとめ買い割','在庫少なめ'];
 // 旧データ（store 1項目）も読めるようにする
 const chainOf = h => (h.chain ?? h.store ?? '').trim();
@@ -546,7 +612,7 @@ const branchOf = h => (h.branch ?? '').trim();
 const storeLabel = h => [chainOf(h), branchOf(h)].filter(Boolean).join(' ') || '店名なし';
 const storeKey = h => norm(chainOf(h)) + '|' + norm(branchOf(h));
 const isBuy = h => h.kind !== 'check';
-const itemKey = h => h.uid || ('name:' + ((h.snapshot || {}).name || ''));
+const itemKey = h => h.uid || ('name:' + historyCat(h) + ':' + ((h.snapshot || {}).name || ''));
 function daysAgo(date){
   const d = Math.round((new Date(todayStr()) - new Date(date)) / 86400000);
   return !Number.isFinite(d) ? '' : d <= 0 ? '今日' : d === 1 ? '昨日' : d < 30 ? d + '日前' : d < 365 ? Math.floor(d / 30) + 'か月前' : Math.floor(d / 365) + '年前';
@@ -554,30 +620,31 @@ function daysAgo(date){
 // 商品ごと・お店ごとに「最新の価格」と「最安値」をまとめる
 function storeComparison(key){
   const groups = new Map();
-  state.history.filter(h => itemKey(h) === key && Number.isFinite(h.unitPrice)).forEach(h => {
+  state.history.filter(h => itemKey(h) === key && Number.isFinite(mainOf(h))).forEach(h => {
     const k = storeKey(h);
     const g = groups.get(k) || { label: storeLabel(h), latest: null, best: null, count: 0 };
     g.count++;
     if (!g.latest || (h.date || '') > (g.latest.date || '') || ((h.date || '') === (g.latest.date || '') && (h.createdAt||0) > (g.latest.createdAt||0))) g.latest = h;
-    if (!g.best || h.unitPrice < g.best.unitPrice) g.best = h;
+    if (!g.best || mainOf(h) < mainOf(g.best)) g.best = h;
     groups.set(k, g);
   });
-  return [...groups.values()].sort((a, b) => a.latest.unitPrice - b.latest.unitPrice);
+  return [...groups.values()].sort((a, b) => mainOf(a.latest) - mainOf(b.latest));
 }
-function storeCompareHtml(rows){
+function storeCompareHtml(rows, cat){
   if (!rows.length) return '<p class="text-sm text-sub">まだこの商品の記録がありません。</p>';
-  const min = rows[0].latest.unitPrice;
+  cat = cat || catOf(historyCat(rows[0].latest));
+  const min = mainOf(rows[0].latest);
   return `<ol class="divide-y divide-line rounded-xl border border-line bg-white overflow-hidden">${rows.map((g, i) => {
-    const diff = g.latest.unitPrice - min;
+    const diff = mainOf(g.latest) - min;
     return `<li class="px-3 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
       <span class="num w-6 h-6 shrink-0 rounded-full text-xs font-bold flex items-center justify-center ${i === 0 ? 'bg-good text-white' : 'bg-sage text-sub'}">${i + 1}</span>
       <div class="flex-1 min-w-[8rem]">
         <div class="font-bold text-sm break-words">${esc(g.label)}</div>
-        <div class="text-xs text-sub num">${esc(g.latest.date)}（${daysAgo(g.latest.date)}）・${yen(g.latest.pay)}/${g.latest.qty}枚${g.count > 1 ? `・最安 ${yen(g.best.unitPrice,1)}` : ''}${g.latest.memo ? '・' + esc(g.latest.memo) : ''}</div>
+        <div class="text-xs text-sub num">${esc(g.latest.date)}（${daysAgo(g.latest.date)}）・${yen(g.latest.pay)}/${g.latest.qty}${cat.countUnit}${g.count > 1 ? `・最安 ${fmtMain(cat, mainOf(g.best))}` : ''}${g.latest.memo ? '・' + esc(g.latest.memo) : ''}</div>
       </div>
       <div class="text-right shrink-0 ml-auto">
-        <div class="num font-semibold">${yen(g.latest.unitPrice,1)}<span class="text-xs text-sub">/枚</span></div>
-        <div class="text-xs num ${i === 0 ? 'text-good font-bold' : 'text-sub'}">${i === 0 ? (rows.length > 1 ? 'いちばん安い' : '') : '+' + yen(diff,1)}</div>
+        <div class="num font-semibold">${fmtMain(cat, mainOf(g.latest))}<span class="text-xs text-sub">${cat.mainSuffix}</span></div>
+        <div class="text-xs num ${i === 0 ? 'text-good font-bold' : 'text-sub'}">${i === 0 ? (rows.length > 1 ? 'いちばん安い' : '') : '+' + yen(diff, cat.mainDec)}</div>
       </div>
     </li>`; }).join('')}</ol>`;
 }
@@ -607,9 +674,9 @@ function kindToggleHtml(kind, prefix){
   return `<div class="col-span-2 grid grid-cols-2 gap-1 p-1 rounded-xl border border-line bg-white" id="${prefix}Kind" data-value="${kind}">${b('buy','購入した')}${b('check','価格だけ記録')}</div>`;
 }
 function bestUnitFor(uid, excludeId){
-  const xs = state.history.filter(h => h.uid === uid && h.id !== excludeId && Number.isFinite(h.unitPrice));
+  const xs = state.history.filter(h => h.uid === uid && h.id !== excludeId && Number.isFinite(mainOf(h)));
   if (!xs.length) return null;
-  return xs.reduce((a,b) => a.unitPrice <= b.unitPrice ? a : b);
+  return xs.reduce((a,b) => mainOf(a) <= mainOf(b) ? a : b);
 }
 
 /* ========================= 画面切替 ========================= */
@@ -804,6 +871,7 @@ const Scanner = (() => {
 function handleScannedJan(code, mode){
   const p = productByJan(code);
   if (p){
+    if (p.category !== state.cat) switchCategory(p.category, true);
     if (mode === 'calc'){ selectCalcProduct(p.uid, true); toast(p.brand + ' ' + p.name + ' ' + p.size); }
     else openProduct(p.uid);
     return;
@@ -814,23 +882,75 @@ function handleScannedJan(code, mode){
 $('#scanSearch').addEventListener('click', () => Scanner.open(code => { $('#q').value = code; state.filter.q = code; renderProducts(); handleScannedJan(code, 'search'); }));
 $('#scanCalc').addEventListener('click', () => Scanner.open(code => handleScannedJan(code, 'calc')));
 
+/* ========================= 品目の切り替え ========================= */
+function renderCatBar(){
+  $('#catBar').innerHTML = CATEGORIES.map(c => {
+    const on = c.id === state.cat;
+    return `<button type="button" data-cat="${c.id}" aria-pressed="${on}" class="catbtn rounded-xl px-1 py-1.5 text-sm font-bold leading-tight flex flex-col items-center justify-center gap-0.5 text-center min-h-[3.25rem] ${on ? 'bg-ink text-white' : 'text-sub'}">
+      <span aria-hidden="true" class="text-base leading-none">${c.icon}</span><span>${c.tab}</span></button>`;
+  }).join('');
+}
+function renderCatLabels(){
+  const c = curCat();
+  $('#lQty').textContent = `入数（${c.countUnit}）`;
+  $('#lTimes').textContent = `${c.amountName}（${c.amountUnit}/${c.countUnit}）`;
+  $('#rMainLabel').textContent = c.mainLabel;
+  $('#rSubLabel').textContent = c.subLabel;
+  $('#sort').innerHTML = `<option value="main">${c.mainLabel.replace(/あたり.*/,'')}が安い順</option><option value="sub">${c.subLabel.replace(/あたり.*/,'')}が安い順</option><option value="maker">メーカー順</option>`;
+  $('#sort').value = state.filter.sort;
+  $('#histCatLabel').textContent = `${c.icon} ${c.label}の記録`;
+  renderPlyChips();
+}
+function renderPlyChips(){
+  const c = curCat();
+  $('#plyRow').hidden = !c.plyOptions;
+  if (!c.plyOptions) return;
+  if (!c.plyOptions.some(o => o.v === state.calc.ply)) state.calc.ply = c.plyBase;
+  $('#lPly').textContent = c.plyLabel;
+  $('#plyNote').textContent = c.plyNote;
+  $('#plyChips').innerHTML = c.plyOptions.map(o => `<button type="button" data-ply="${o.v}" aria-pressed="${o.v === state.calc.ply}" class="chip h-11 px-4 rounded-full border border-line bg-paper font-bold">${o.t}</button>`).join('');
+}
+$('#plyChips').addEventListener('click', e => { const b = e.target.closest('[data-ply]'); if (!b) return; state.calc.ply = Number(b.dataset.ply); renderPlyChips(); calc(); });
+function switchCategory(id, quiet){
+  if (!CAT[id] || id === state.cat) return;
+  state.cat = id;
+  try { localStorage.setItem('omutsu-cat', id); } catch(e){}
+  DB.put('meta', { key:'category', value:id }).catch(() => {});
+  state.filter.maker = 'すべて'; state.filter.size = 'すべて';
+  state.calc.uid = ''; state.calc.pendingMemo = ''; state.calc.ply = catOf(id).plyBase;
+  ['#cPrice','#cPct','#cYen','#cQty','#cTimes'].forEach(s => $(s).value = '');
+  renderCatBar(); renderCatLabels(); renderChips(); renderProducts(); fillCalcSelect(); selectCalcProduct('', false);
+  if (state.view === 'history') renderHistory();
+  if (!quiet) toast(catOf(id).label + 'に切り替えました');
+}
+$('#catBar').addEventListener('click', e => { const b = e.target.closest('[data-cat]'); if (b) switchCategory(b.dataset.cat); });
+
 /* ========================= 探す ========================= */
 function renderChips(){
-  const makers = ['すべて', ...new Set(state.products.map(p => p.maker))];
-  const sizes = ['すべて', ...new Set(state.products.map(p => p.size))];
+  const ps = catProducts();
+  const makers = ['すべて', ...new Set(ps.map(p => p.maker).filter(Boolean))];
+  const sizes = ['すべて', ...new Set(ps.map(p => p.size).filter(Boolean))];
   const chip = (v, cur, key) => `<button type="button" class="chip shrink-0 h-9 px-3.5 rounded-full border border-line bg-paper text-sm font-bold" data-${key}="${esc(v)}" aria-pressed="${v === cur}">${esc(v)}</button>`;
-  $('#makerChips').innerHTML = makers.map(m => chip(m, state.filter.maker, 'maker')).join('');
-  $('#sizeChips').innerHTML = sizes.map(s => chip(s, state.filter.size, 'size')).join('');
+  $('#makerChips').innerHTML = makers.length > 1 ? makers.map(m => chip(m, state.filter.maker, 'maker')).join('') : '';
+  $('#sizeChips').innerHTML = sizes.length > 1 ? sizes.map(s => chip(s, state.filter.size, 'size')).join('') : '';
 }
 $('#makerChips').addEventListener('click', e => { const b = e.target.closest('[data-maker]'); if (!b) return; state.filter.maker = b.dataset.maker; renderChips(); renderProducts(); });
 $('#sizeChips').addEventListener('click', e => { const b = e.target.closest('[data-size]'); if (!b) return; state.filter.size = b.dataset.size; renderChips(); renderProducts(); });
 $('#q').addEventListener('input', e => { state.filter.q = e.target.value; renderProducts(); });
 $('#sort').addEventListener('change', e => { state.filter.sort = e.target.value; renderProducts(); });
 
+function amountBadge(p){
+  const c = catOf(p.category);
+  if (p.category === 'diaper') return p.absorbency_level || '';
+  const parts = [Number.isFinite(p.times) ? `${p.times}${c.amountUnit}` : ''];
+  if (c.id === 'tissue' && p.ply && p.ply !== c.plyBase) parts.push(plyText(c, p.ply));
+  if (p.sheet_size) parts.push(p.sheet_size);
+  return parts.filter(Boolean).join('・');
+}
 function filteredProducts(){
   const { q, maker, size, sort } = state.filter;
   const words = norm(q).split(/\s+/).filter(Boolean);
-  let xs = state.products.filter(p => {
+  let xs = catProducts().filter(p => {
     if (maker !== 'すべて' && p.maker !== maker) return false;
     if (size !== 'すべて' && p.size !== size) return false;
     if (!words.length) return true;
@@ -838,45 +958,71 @@ function filteredProducts(){
     return words.every(w => hay.includes(w));
   });
   const inf = v => Number.isFinite(v) ? v : Infinity;
-  if (sort === 'unit') xs.sort((a,b) => inf(a.refUnit) - inf(b.refUnit));
-  else if (sort === 'use') xs.sort((a,b) => inf(a.refUse) - inf(b.refUse));
+  if (sort === 'main') xs.sort((a,b) => inf(a.refMain) - inf(b.refMain));
+  else if (sort === 'sub') xs.sort((a,b) => inf(a.refSub) - inf(b.refSub));
   else xs.sort((a,b) => (a.maker + a.brand + a.name + a.size).localeCompare(b.maker + b.brand + b.name + b.size, 'ja'));
   return xs;
 }
 function renderProducts(){
+  const c = curCat();
   const xs = filteredProducts();
   $('#resultCount').textContent = `${xs.length}件`;
+  if (!catProducts().length){
+    $('#productList').innerHTML = `<li class="p-5 text-center">
+      <p class="font-bold">${esc(c.label)}の商品はまだ登録されていません</p>
+      <p class="text-sm text-sub mt-1 leading-relaxed">よく買う商品のバーコードを読み取るか、パッケージを見ながら登録してください。${AI.has() ? 'パッケージの写真からAIで入力もできます。' : ''}</p>
+      <div class="mt-3 grid grid-cols-2 gap-2">
+        <button type="button" data-empty="scan" class="h-12 rounded-xl bg-ink text-white font-bold text-sm">バーコードで登録</button>
+        <button type="button" data-empty="add" class="h-12 rounded-xl border border-line font-bold text-sm">商品を登録</button>
+      </div></li>`;
+    return;
+  }
   if (!xs.length){
     $('#productList').innerHTML = `<li class="p-6 text-center text-sub text-sm">条件に合う商品がありません。<br>キーワードを短くするか、絞り込みを「すべて」に戻してください。</li>`;
     return;
   }
   $('#productList').innerHTML = xs.map(p => {
     const best = bestUnitFor(p.uid);
+    const ab = amountBadge(p);
     return `<li><button type="button" class="w-full text-left px-4 py-3 flex gap-3 items-center active:bg-mint/50" data-uid="${esc(p.uid)}">
       <div class="flex-1 min-w-0">
-        <div class="text-xs text-sub">${esc(p.brand)}<span class="mx-1">/</span>${esc(p.maker)}${p.source==='custom' ? ' <span class="text-leaf font-bold">自分で登録</span>' : ''}</div>
+        <div class="text-xs text-sub">${esc(p.brand)}${p.maker ? `<span class="mx-1">/</span>${esc(p.maker)}` : ''}${p.source==='custom' ? ' <span class="text-leaf font-bold">自分で登録</span>' : ''}</div>
         <div class="font-bold leading-snug">${esc(p.name)}</div>
         <div class="mt-1 flex flex-wrap gap-1.5 text-xs">
-          <span class="px-1.5 py-0.5 rounded bg-ink text-white font-bold num">${esc(p.size)}</span>
-          <span class="px-1.5 py-0.5 rounded bg-mint">${esc(p.absorbency_level)}</span>
-          <span class="px-1.5 py-0.5 rounded border border-line num">${p.quantity}枚</span>
+          ${p.size ? `<span class="px-1.5 py-0.5 rounded bg-ink text-white font-bold num">${esc(p.size)}</span>` : ''}
+          ${ab ? `<span class="px-1.5 py-0.5 rounded bg-mint num">${esc(ab)}</span>` : ''}
+          <span class="px-1.5 py-0.5 rounded border border-line num">${p.quantity}${c.countUnit}</span>
           ${p.jan_code ? '' : '<span class="px-1.5 py-0.5 rounded border border-dashed border-line text-sub">JAN未登録</span>'}
         </div>
-        ${best ? `<div class="mt-1 text-xs text-good">あなたの最安 <span class="num font-bold">${yen(best.unitPrice,1)}</span>/枚（${esc(storeLabel(best))}）</div>` : ''}
+        ${best ? `<div class="mt-1 text-xs text-good">あなたの最安 <span class="num font-bold">${fmtMain(c, mainOf(best))}</span>${c.mainSuffix}（${esc(storeLabel(best))}）</div>` : ''}
       </div>
       <div class="text-right shrink-0">
-        <div class="num text-xl font-semibold leading-tight">${yen(p.refUnit,1)}</div>
-        <div class="text-xs text-sub">/枚</div>
-        <div class="num text-sm text-sub mt-0.5">${Number.isFinite(p.refUse) ? yen(p.refUse,1) + '/回' : '—'}</div>
+        ${Number.isFinite(p.refMain) ? `
+        <div class="num text-xl font-semibold leading-tight">${fmtMain(c, p.refMain)}</div>
+        <div class="text-xs text-sub">${c.mainSuffix}</div>
+        <div class="num text-sm text-sub mt-0.5">${Number.isFinite(p.refSub) ? fmtSub(c, p.refSub) + c.subSuffix : '—'}</div>`
+        : best ? `
+        <div class="text-xs text-sub">最安記録</div>
+        <div class="num text-xl font-semibold leading-tight">${fmtMain(c, mainOf(best))}</div>
+        <div class="text-xs text-sub">${c.mainSuffix}</div>`
+        : '<div class="text-xs text-sub leading-tight">価格は<br>未記録</div>'}
       </div>
     </button></li>`;
   }).join('');
 }
-$('#productList').addEventListener('click', e => { const b = e.target.closest('[data-uid]'); if (b) openProduct(b.dataset.uid); });
+$('#productList').addEventListener('click', e => {
+  const em = e.target.closest('[data-empty]');
+  if (em){ if (em.dataset.empty === 'scan') $('#scanSearch').click(); else openAddProduct({}); return; }
+  const b = e.target.closest('[data-uid]'); if (b) openProduct(b.dataset.uid);
+});
 
 function productForm(p){
+  const category = CAT[p.category] ? p.category : state.cat;
+  const c = catOf(category);
   const f = (id, label, val, attrs='') => `<label class="block"><span class="text-xs text-sub">${label}</span><input id="${id}" value="${esc(val)}" ${attrs} class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>`;
-  return `<div class="grid grid-cols-2 gap-2 fs-stack">
+  return `<input type="hidden" id="pCat" value="${esc(category)}">
+  <p class="mb-2 text-sm font-bold">${c.icon} ${esc(c.label)}</p>
+  <div class="grid grid-cols-2 gap-2 fs-stack">
     <div class="col-span-2"><span class="text-xs text-sub">JANコード</span>
       <div class="mt-0.5 flex gap-2">
         <input id="pJan" value="${esc(p.jan_code || '')}" inputmode="numeric" maxlength="13" placeholder="13桁（任意）" class="num flex-1 min-w-0 h-11 px-3 rounded-xl bg-white border border-line">
@@ -886,28 +1032,36 @@ function productForm(p){
     ${f('pMaker','メーカー', p.maker || '')}
     ${f('pBrand','ブランド', p.brand || '')}
     <div class="col-span-2">${f('pName','商品名', p.name || '')}</div>
-    ${f('pSize','サイズ', p.size || '', 'placeholder="M, L, M-L など"')}
-    ${f('pGender','対象', p.gender || '男女共用')}
-    ${f('pAbs','吸収量の目安', p.absorbency_level || '', 'placeholder="約2回分 / 600mL"')}
-    ${f('pTimes','吸収回数（数値）', p.times ?? '', 'inputmode="decimal" placeholder="自動"')}
-    ${f('pQty','入数（枚）', p.quantity || '', 'inputmode="numeric"')}
-    ${f('pPrice','参考価格（税込・円）', p.standard_price_jpy || '', 'inputmode="numeric"')}
+    ${c.plyIsVariant ? '' : f('pSize', c.variantName, p.size || '', `placeholder="${esc(c.variantHint)}"`)}
+    ${c.plyOptions ? `<label class="block"><span class="text-xs text-sub">${c.plyLabel}</span>
+      <select id="pPly" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line">${c.plyOptions.map(o => `<option value="${o.v}" ${Number(p.ply || plyFromText(c, p.size) || c.plyBase) === o.v ? 'selected' : ''}>${o.t}</option>`).join('')}</select></label>` : ''}
+    ${c.hasSheetSize ? f('pSheet', '1枚の大きさ（任意）', p.sheet_size || '', 'placeholder="例：217×197mm"') : ''}
+    ${c.hasGender ? f('pGender','対象', p.gender || '男女共用') : ''}
+    ${category === 'diaper' ? f('pAbs','吸収量の目安', p.absorbency_level || '', 'placeholder="約2回分 / 600mL"') : ''}
+    ${f('pTimes', `${c.amountName}（${c.amountUnit}）`, p.times ?? '', `inputmode="decimal" placeholder="${category === 'diaper' ? '自動' : '例：' + (category === 'toilet' ? '25' : '200')}"`)}
+    ${f('pQty', `入数（${c.countUnit}）`, p.quantity || '', 'inputmode="numeric"')}
+    ${f('pPrice','参考価格（税込・円・任意）', p.standard_price_jpy || '', 'inputmode="numeric" placeholder="0"')}
   </div>`;
 }
 function readProductForm(root){
-  const v = id => $('#' + id, root).value.trim();
+  const v = id => { const el = $('#' + id, root); return el ? el.value.trim() : ''; };
   const jan = v('pJan').replace(/\D/g,'');
+  const category = CAT[v('pCat')] ? v('pCat') : state.cat, c = catOf(category);
+  const ply = v('pPly') ? Number(v('pPly')) : null;
   return {
-    jan_code: jan, maker: v('pMaker'), brand: v('pBrand'), name: v('pName'), size: v('pSize'),
+    category, jan_code: jan, maker: v('pMaker'), brand: v('pBrand'), name: v('pName'),
+    size: c.plyIsVariant ? plyText(c, ply) : v('pSize'), ply, sheet_size: v('pSheet'),
     gender: v('pGender'), absorbency_level: v('pAbs'),
     times: v('pTimes') === '' ? null : toNum(v('pTimes')),
-    quantity: toNum(v('pQty')), standard_price_jpy: toNum(v('pPrice')),
+    quantity: toNum(v('pQty')), standard_price_jpy: v('pPrice') === '' ? 0 : toNum(v('pPrice')),
     source_url: v('pUrl'), source_name: v('pUrl') ? (v('pUrl').match(/^https?:\/\/([^/]+)/)?.[1] || '') : ''
   };
 }
 function validProduct(d){
+  const c = catOf(d.category);
   if (!d.name) return '商品名を入力してください';
-  if (!(d.quantity > 0)) return '入数を1以上の数字で入力してください';
+  if (!(d.quantity > 0)) return `入数（${c.countUnit}）を1以上の数字で入力してください`;
+  if (c.amountRequired && !(d.times > 0)) return `${c.amountName}（${c.amountUnit}）を入力してください`;
   if (!(d.standard_price_jpy >= 0)) return '参考価格を数字で入力してください';
   if (d.jan_code && !validJan(d.jan_code)) return 'JANコードが正しくありません（8桁/13桁・チェックディジットを確認）';
   if (d.source_url && !/^https?:\/\//.test(d.source_url)) return 'URLは https:// から入力してください';
@@ -915,17 +1069,19 @@ function validProduct(d){
 }
 function openProduct(uid){
   const p = productBy(uid); if (!p) return;
-  const best = bestUnitFor(uid);
+  const c = catOf(p.category);
   openSheet(`
-    <div class="text-xs text-sub">${esc(p.maker)}<span class="mx-1">/</span>${esc(p.brand)}</div>
+    <div class="text-xs text-sub">${c.icon} ${esc(c.label)}${p.maker ? `<span class="mx-1">/</span>${esc(p.maker)}` : ''}<span class="mx-1">/</span>${esc(p.brand)}</div>
     <h2 class="text-xl font-black leading-snug">${esc(p.name)} <span class="num">${esc(p.size)}</span></h2>
+    <p class="text-sm text-sub num">${p.quantity}${c.countUnit}入${Number.isFinite(p.times) ? `・${c.amountName} ${p.times}${c.amountUnit}` : ''}${c.plyOptions ? '・' + plyText(c, p.ply) : ''}${p.sheet_size ? '・1枚 ' + esc(p.sheet_size) : ''}</p>
+    ${c.plyOptions && p.ply !== c.plyBase && Number.isFinite(p.refRaw) ? `<p class="text-xs text-sub">表示どおりの量では ${fmtMain(c, p.refRaw)}${c.mainSuffix}（${esc(c.plyNote)}）</p>` : ''}
     <div class="mt-3 grid grid-cols-3 gap-2 text-center">
-      <div class="rounded-xl bg-sage py-2"><div class="text-xs text-sub">参考価格</div><div class="num font-bold">${yen(p.standard_price_jpy)}</div></div>
-      <div class="rounded-xl bg-sage py-2"><div class="text-xs text-sub">1枚</div><div class="num font-bold">${yen(p.refUnit,1)}</div></div>
-      <div class="rounded-xl bg-sage py-2"><div class="text-xs text-sub">1回</div><div class="num font-bold">${yen(p.refUse,1)}</div></div>
+      <div class="rounded-xl bg-sage py-2"><div class="text-xs text-sub">参考価格</div><div class="num font-bold">${p.standard_price_jpy ? yen(p.standard_price_jpy) : '—'}</div></div>
+      <div class="rounded-xl bg-sage py-2"><div class="text-xs text-sub">${c.mainLabel}</div><div class="num font-bold">${p.standard_price_jpy ? fmtMain(c, p.refMain) : '—'}</div></div>
+      <div class="rounded-xl bg-sage py-2"><div class="text-xs text-sub">${c.subLabel}</div><div class="num font-bold">${p.standard_price_jpy ? fmtSub(c, p.refSub) : '—'}</div></div>
     </div>
     <h3 class="mt-4 mb-1.5 font-bold text-sm">お店ごとの価格（最新の記録）</h3>
-    ${storeCompareHtml(storeComparison(uid))}
+    ${storeCompareHtml(storeComparison(uid), c)}
     <div class="mt-3 text-sm">
       ${p.jan_code ? `<div class="num">JAN ${esc(p.jan_code)}</div>` : '<div class="text-sub">JANコード未登録（下の「商品情報を編集」から読み取れます）</div>'}
     </div>
@@ -933,7 +1089,7 @@ function openProduct(uid){
       ${p.source_url
         ? `<a href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer" class="h-12 rounded-xl border border-leaf text-leaf font-bold flex items-center justify-center text-sm px-2 text-center leading-tight">根拠ページを開く</a>`
         : '<span class="h-12 rounded-xl border border-dashed border-line text-sub flex items-center justify-center text-sm">根拠ページなし</span>'}
-      <a href="${esc(searchUrl(p.search_keyword || [p.brand, p.name, p.size, p.quantity + '枚', p.jan_code].filter(Boolean).join(' ')))}" target="_blank" rel="noopener noreferrer" class="h-12 rounded-xl border border-line font-bold flex items-center justify-center text-sm">ネットで検索</a>
+      <a href="${esc(searchUrl(p.search_keyword || [p.brand, p.name, p.size, p.quantity + c.countUnit, p.jan_code].filter(Boolean).join(' ')))}" target="_blank" rel="noopener noreferrer" class="h-12 rounded-xl border border-line font-bold flex items-center justify-center text-sm">ネットで検索</a>
     </div>
     ${p.source_name ? `<p class="mt-1 text-xs text-sub">根拠：${esc(p.source_name)}</p>` : ''}
     <button type="button" id="goCalc" class="mt-4 w-full h-14 rounded-2xl bg-leaf text-white font-bold text-lg">この商品で計算する</button>
@@ -948,7 +1104,7 @@ function openProduct(uid){
       </div>
     </details>
   `, root => {
-    $('#goCalc', root).onclick = () => { closeSheet(); selectCalcProduct(uid, true); show('calc'); };
+    $('#goCalc', root).onclick = () => { closeSheet(); if (p.category !== state.cat) switchCategory(p.category, true); selectCalcProduct(uid, true); show('calc'); };
     $('#pSave', root).onclick = async () => {
       const d = readProductForm(root); const err = validProduct(d); if (err) return toast(err);
       const dup = d.jan_code && state.products.find(x => x.jan_code === d.jan_code && x.uid !== uid);
@@ -965,21 +1121,22 @@ async function refreshProducts(){ await loadProducts(); renderChips(); renderPro
 
 /* ========================= 計算 ========================= */
 function fillCalcSelect(){
-  const groups = {};
-  state.products.forEach(p => (groups[p.maker] ||= []).push(p));
+  const c = curCat(), groups = {};
+  catProducts().forEach(p => (groups[p.maker || p.brand || 'その他'] ||= []).push(p));
   $('#cProduct').innerHTML = `<option value="">商品を選ばずに計算</option>` +
-    Object.entries(groups).map(([m, ps]) => `<optgroup label="${esc(m)}">${ps.map(p => `<option value="${esc(p.uid)}">${esc(p.brand)} ${esc(p.name)} ${esc(p.size)}（${p.quantity}枚）</option>`).join('')}</optgroup>`).join('');
+    Object.entries(groups).map(([m, ps]) => `<optgroup label="${esc(m)}">${ps.map(p => `<option value="${esc(p.uid)}">${esc(p.brand)} ${esc(p.name)} ${esc(p.size)}（${p.quantity}${c.countUnit}${c.id !== 'diaper' && p.times ? '・' + p.times + c.amountUnit : ''}）</option>`).join('')}</optgroup>`).join('');
   $('#cProduct').value = state.calc.uid || '';
 }
 function selectCalcProduct(uid, prefill){
   state.calc.uid = uid || '';
   $('#cProduct').value = state.calc.uid;
-  const p = productBy(uid);
+  const p = productBy(uid), c = curCat();
   if (p && prefill){
     $('#cQty').value = p.quantity || '';
     $('#cTimes').value = p.times ?? '';
   }
-  $('#cRefLine').textContent = p ? `参考 ${yen(p.standard_price_jpy)}（${p.quantity}枚）＝ ${yen(p.refUnit,1)}/枚${p.jan_code ? '　JAN ' + p.jan_code : ''}` : '';
+  if (p && c.plyOptions && p.ply){ state.calc.ply = p.ply; renderPlyChips(); }
+  $('#cRefLine').textContent = p ? (p.standard_price_jpy ? `参考 ${yen(p.standard_price_jpy)}（${p.quantity}${c.countUnit}）＝ ${fmtMain(c, p.refMain)}${c.mainSuffix}` : '参考価格なし') + (p.jan_code ? '　JAN ' + p.jan_code : '') : '';
   calc();
 }
 $('#cProduct').addEventListener('change', e => selectCalcProduct(e.target.value, true));
@@ -989,14 +1146,16 @@ $('#pctChips').addEventListener('click', e => { const b = e.target.closest('[dat
 ['#cPrice','#cQty','#cTimes','#cPct','#cYen'].forEach(s => $(s).addEventListener('input', calc));
 
 function currentCalc(){
+  const c = curCat();
   const price = toNum($('#cPrice').value), qty = toNum($('#cQty').value), times = toNum($('#cTimes').value);
   const pct = toNum($('#cPct').value) || 0, off = toNum($('#cYen').value) || 0;
   const taxed = state.calc.tax === 'ex' ? price * 1.1 : price;
   const pay = Math.max(0, Math.round(taxed * (1 - Math.min(Math.max(pct,0),100) / 100) - off));
   const ok = Number.isFinite(price) && price > 0 && qty > 0;
-  const unit = ok ? pay / qty : NaN;
-  const use = ok && times > 0 ? unit / times : NaN;
-  return { price, qty, times: times > 0 ? times : null, pct, off, tax: state.calc.tax, pay: ok ? pay : NaN, unit, use, ok };
+  const ply = c.plyOptions ? (state.calc.ply || c.plyBase) : null;
+  const m = metrics(c, ok ? pay : NaN, qty, times > 0 ? times : NaN, ply);
+  return { cat:c, price, qty, times: times > 0 ? times : null, ply, pct, off, tax: state.calc.tax, pay: ok ? pay : NaN,
+           unit: m.perCount, use: m.perAmount, raw: m.rawAmount, main: m.main, sub: m.sub, ok, mainOk: ok && Number.isFinite(m.main) };
 }
 function verdict(ratio){
   if (ratio <= 0.85) return { t:'かなりお得', c:'text-good' };
@@ -1004,29 +1163,32 @@ function verdict(ratio){
   if (ratio <= 1.05) return { t:'ふつう', c:'text-fair' };
   return { t:'割高', c:'text-bad' };
 }
+function median(xs){ const a = xs.filter(Number.isFinite).sort((x,y) => x-y); return a.length ? a[Math.floor(a.length/2)] : NaN; }
 function calc(){
-  const r = currentCalc(); const p = productBy(state.calc.uid);
+  const r = currentCalc(), c = r.cat; const p = productBy(state.calc.uid);
   $$('#pctChips [data-pct]').forEach(b => b.setAttribute('aria-pressed', String((toNum($('#cPct').value) || 0) === Number(b.dataset.pct))));
-  $('#rUnit').textContent = r.ok ? yen(r.unit, 1) : '—';
-  $('#rUse').textContent = Number.isFinite(r.use) ? yen(r.use, 1) : '—';
+  $('#rUnit').textContent = r.ok ? fmtMain(c, r.main) : '—';
+  $('#rUse').textContent = r.ok ? fmtSub(c, r.sub) : '—';
+  $('#rRaw').textContent = c.plyOptions && r.ply !== c.plyBase && Number.isFinite(r.raw) ? `表示どおりの量では ${fmtMain(c, r.raw)}${c.mainSuffix}（${plyText(c, r.ply)}）` : '';
   $('#rPay').textContent = r.ok ? yen(r.pay) : '—';
   const best = p ? bestUnitFor(p.uid) : null;
-  $('#rBest').textContent = best ? `${yen(best.unitPrice,1)}/枚・${storeLabel(best)}` : '—';
+  $('#rBest').textContent = best ? `${fmtMain(c, mainOf(best))}${c.mainSuffix}・${storeLabel(best)}` : '—';
   const marker = $('#rMarker');
-  if (!r.ok){ $('#rVerdict').className = 'mt-3 text-lg font-bold'; $('#rVerdict').textContent = '価格を入れると判定します'; $('#rDetail').textContent = ''; marker.style.opacity = 0; $('#cSave').disabled = true; return; }
+  const noVerdict = (msg) => { $('#rVerdict').className = 'mt-3 text-lg font-bold'; $('#rVerdict').textContent = msg; $('#rDetail').textContent = ''; marker.style.opacity = 0; };
+  if (!r.ok){ noVerdict('価格を入れると判定します'); $('#cSave').disabled = true; return; }
   $('#cSave').disabled = false;
-  // 比較基準：選択商品の参考単価 → なければ全商品の中央値
-  let ref = p && Number.isFinite(p.refUnit) ? p.refUnit : NaN, refLabel = '参考価格';
-  if (!Number.isFinite(ref)){
-    const us = state.products.map(x => x.refUnit).filter(Number.isFinite).sort((a,b) => a-b);
-    ref = us[Math.floor(us.length/2)]; refLabel = '登録商品の中央値';
-  }
-  const ratio = r.unit / ref; const v = verdict(ratio);
+  if (!r.mainOk){ noVerdict(`${c.amountName}を入れると${c.mainLabel}を計算します`); return; }
+  // 比較基準：選択商品の参考単価 → 登録商品の中央値 → 記録の中央値
+  let ref = p && p.standard_price_jpy && Number.isFinite(p.refMain) ? p.refMain : NaN, refLabel = '参考価格';
+  if (!Number.isFinite(ref)){ ref = median(catProducts().filter(x => x.standard_price_jpy).map(x => x.refMain)); refLabel = '登録商品の中央値'; }
+  if (!Number.isFinite(ref)){ ref = median(state.history.filter(h => historyCat(h) === c.id).map(mainOf)); refLabel = 'これまでの記録の中央値'; }
+  if (!Number.isFinite(ref)){ noVerdict('比べる基準がまだありません'); $('#rDetail').textContent = '記録を保存していくと、お得かどうか判定できるようになります'; return; }
+  const ratio = r.main / ref; const v = verdict(ratio);
   $('#rVerdict').className = 'mt-3 text-lg font-bold ' + v.c;
   $('#rVerdict').textContent = v.t;
   const diff = Math.round((1 - ratio) * 100);
-  let detail = `${refLabel}（${yen(ref,1)}/枚）より${diff >= 0 ? diff + '%安い' : Math.abs(diff) + '%高い'}`;
-  if (best) detail += best.unitPrice < r.unit - 0.05 ? `。過去最安より ${yen(r.unit - best.unitPrice,1)}/枚 高め` : '。過去最安と同じか、それより安い';
+  let detail = `${refLabel}（${fmtMain(c, ref)}${c.mainSuffix}）より${diff >= 0 ? diff + '%安い' : Math.abs(diff) + '%高い'}`;
+  if (best) detail += mainOf(best) < r.main - Math.pow(10, -c.mainDec) / 2 ? `。過去最安より ${yen(r.main - mainOf(best), c.mainDec)}${c.mainSuffix} 高め` : '。過去最安と同じか、それより安い';
   $('#rDetail').textContent = detail;
   const pos = Math.min(1, Math.max(0, (ratio - 0.6) / 0.8));
   marker.style.left = (pos * 100) + '%'; marker.style.opacity = 1;
@@ -1039,13 +1201,13 @@ $('#cSave').addEventListener('click', () => {
   const last = state.history[0] || {};
   openSheet(`
     <h2 class="text-lg font-black">記録する</h2>
-    <p class="text-sm text-sub mt-1">${p ? esc(p.brand + ' ' + p.name + ' ' + p.size) : '商品未選択'} ・ <span class="num">${yen(r.unit,1)}</span>/枚</p>
+    <p class="text-sm text-sub mt-1">${r.cat.icon} ${p ? esc(p.brand + ' ' + p.name + ' ' + p.size) : '商品未選択'} ・ <span class="num">${fmtMain(r.cat, r.main)}</span>${r.cat.mainSuffix}</p>
     <div class="mt-3 grid grid-cols-2 gap-2 fs-stack">
       ${kindToggleHtml('buy', 's')}
       ${storeFieldsHtml({ chain: chainOf(last), branch: branchOf(last) }, 's')}
       <label class="block"><span class="text-xs text-sub" id="sDateLabel">購入日</span><input id="sDate" type="date" value="${todayStr()}" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>
       <label class="block" id="sPacksWrap"><span class="text-xs text-sub">パック数</span><input id="sPacks" type="text" inputmode="numeric" value="1" class="num mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>
-      ${p ? '' : `<label class="block col-span-2"><span class="text-xs text-sub">商品名</span><input id="sName" placeholder="例：〇〇パンツ Lサイズ" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>`}
+      ${p ? '' : `<label class="block col-span-2"><span class="text-xs text-sub">商品名</span><input id="sName" placeholder="例：${r.cat.id === 'diaper' ? '〇〇パンツ Lサイズ' : r.cat.id === 'toilet' ? '〇〇 ダブル 12ロール' : '〇〇 5箱'}" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>`}
       ${memoFieldHtml({ memo: state.calc.pendingMemo || '' }, 's')}
     </div>
     <p class="mt-2 text-xs text-sub">「価格だけ記録」は支出に含めず、お店の比較にだけ使います。</p>
@@ -1057,16 +1219,17 @@ $('#cSave').addEventListener('click', () => {
       const chain = $('#sChain', root).value.trim(), branch = $('#sBranch', root).value.trim();
       if (!chain && !confirm('お店が未入力です。このまま保存しますか？')) return;
       const rec = {
-        kind,
+        kind, category: r.cat.id,
         date: $('#sDate', root).value || todayStr(),
         chain, branch, store: [chain, branch].filter(Boolean).join(' '),
         memo: $('#sMemo', root).value.trim(),
         uid: p ? p.uid : '',
         snapshot: p ? { jan_code:p.jan_code, maker:p.maker, brand:p.brand, name:p.name, size:p.size } : { jan_code:'', maker:'', brand:'', name: ($('#sName', root)?.value.trim() || '商品名なし'), size:'' },
         shelfPrice: r.price, tax: r.tax, discountPct: r.pct, discountYen: r.off,
-        qty: r.qty, times: r.times, pay: r.pay, packs, total: r.pay * packs,
+        qty: r.qty, times: r.times, ply: r.ply, pay: r.pay, packs, total: r.pay * packs,
         unitPrice: r.unit, perUse: Number.isFinite(r.use) ? r.use : null,
-        refUnit: p ? p.refUnit : null, createdAt: Date.now()
+        mainPrice: Number.isFinite(r.main) ? r.main : null,
+        refMain: p && Number.isFinite(p.refMain) ? p.refMain : null, createdAt: Date.now()
       };
       try { await DB.put('history', rec); } catch(e){ return toast('保存に失敗しました：' + e.message); }
       state.calc.pendingMemo = '';
@@ -1081,25 +1244,32 @@ state.hmode = 'list';
 $$('.hmode').forEach(b => b.addEventListener('click', () => { state.hmode = b.dataset.hmode; renderHistory(); }));
 function renderHistory(){
   $$('.hmode').forEach(b => { const on = b.dataset.hmode === state.hmode; b.setAttribute('aria-pressed', on); b.className = 'hmode h-10 rounded-xl text-sm font-bold ' + (on ? 'bg-ink text-white' : 'text-sub'); });
+  const c = curCat();
   const ym = todayStr().slice(0,7);
-  const buys = state.history.filter(isBuy);
+  const catHist = state.history.filter(h => historyCat(h) === c.id);
+  const buys = catHist.filter(isBuy);
   const month = buys.filter(h => (h.date || '').startsWith(ym));
   $('#sMonth').textContent = yen(month.reduce((s,h) => s + (h.total || 0), 0));
   $('#sCount').textContent = month.length + '件';
-  const sheets = buys.reduce((s,h) => s + h.qty * (h.packs || 1), 0);
-  const spent = buys.reduce((s,h) => s + (h.total || 0), 0);
-  $('#sAvg').textContent = sheets ? yen(spent / sheets, 1) : '—';
+  // 平均単価（比較単価ベース）：支出 ÷ 量
+  let spent = 0, amount = 0;
+  buys.forEach(h => {
+    const packs = h.packs || 1;
+    const q = c.main === 'amount' ? (h.times > 0 ? h.qty * h.times * plyFactor(c, h.ply || c.plyBase) / c.amountScale : 0) : h.qty;
+    if (q > 0){ spent += h.total || 0; amount += q * packs; }
+  });
+  $('#sAvg').textContent = amount ? fmtMain(c, spent / amount) + c.mainSuffix : '—';
 
   const words = norm($('#hq').value).split(/\s+/).filter(Boolean);
-  const xs = state.history.filter(h => {
+  const xs = catHist.filter(h => {
     if (!words.length) return true;
     const s = h.snapshot || {};
     const hay = norm([chainOf(h), branchOf(h), h.memo, s.brand, s.name, s.size, s.jan_code, h.date, isBuy(h) ? '購入' : '価格記録'].join(' '));
     return words.every(w => hay.includes(w));
   });
-  if (!state.history.length){
+  if (!catHist.length){
     $('#historyList').innerHTML = `<li class="bg-paper border border-dashed border-line rounded-2xl p-6 text-center">
-      <p class="font-bold">まだ記録がありません</p>
+      <p class="font-bold">${esc(c.label)}の記録はまだありません</p>
       <p class="text-sm text-sub mt-1">「計算」で店頭価格を入れて、保存するとここに残ります。</p>
       <button type="button" class="mt-3 h-11 px-5 rounded-xl bg-leaf text-white font-bold" onclick="show('calc')">計算をはじめる</button></li>`;
     return;
@@ -1113,14 +1283,14 @@ function renderHistory(){
       return `<li class="bg-paper border border-line rounded-2xl p-3">
         <div class="font-bold leading-snug px-1">${esc(s.brand)} ${esc(s.name)} <span class="num">${esc(s.size)}</span></div>
         <div class="text-xs text-sub px-1 mb-2">${rows.length}店の記録${rows.length < 2 ? '（2店以上記録すると比べられます）' : ''}</div>
-        ${storeCompareHtml(rows)}
+        ${storeCompareHtml(rows, c)}
       </li>`;
     }).join('');
     return;
   }
   $('#historyList').innerHTML = xs.map(h => {
     const s = h.snapshot || {};
-    const ratio = Number.isFinite(h.refUnit) && h.refUnit ? h.unitPrice / h.refUnit : NaN;
+    const ref = refOf(h), ratio = Number.isFinite(ref) && ref ? mainOf(h) / ref : NaN;
     const v = Number.isFinite(ratio) ? verdict(ratio) : null;
     return `<li><button type="button" data-hid="${h.id}" class="w-full text-left bg-paper border border-line rounded-2xl px-4 py-3 active:bg-mint/50">
       <div class="flex justify-between items-baseline gap-2">
@@ -1130,10 +1300,10 @@ function renderHistory(){
       <div class="mt-0.5 flex justify-between items-end gap-3">
         <div class="min-w-0">
           <div class="font-bold leading-snug truncate">${esc(s.brand)} ${esc(s.name)} <span class="num">${esc(s.size)}</span></div>
-          <div class="text-xs text-sub num">${isBuy(h) ? `${yen(h.pay)} × ${h.packs}パック` : yen(h.pay)}（${h.qty}枚入）${v ? ` <span class="${v.c} font-bold">${v.t}</span>` : ''}</div>
+          <div class="text-xs text-sub num">${isBuy(h) ? `${yen(h.pay)} × ${h.packs}パック` : yen(h.pay)}（${h.qty}${c.countUnit}入）${v ? ` <span class="${v.c} font-bold">${v.t}</span>` : ''}</div>
           ${h.memo ? `<div class="text-xs text-sub truncate">📝 ${esc(h.memo)}</div>` : ''}
         </div>
-        <div class="text-right shrink-0"><div class="num text-lg font-semibold">${yen(h.unitPrice,1)}</div><div class="text-xs text-sub">/枚</div></div>
+        <div class="text-right shrink-0"><div class="num text-lg font-semibold">${fmtMain(c, mainOf(h))}</div><div class="text-xs text-sub">${c.mainSuffix}</div></div>
       </div>
     </button></li>`;
   }).join('');
@@ -1142,15 +1312,16 @@ $('#historyList').addEventListener('click', e => { const b = e.target.closest('[
 
 function openHistory(id){
   const h = state.history.find(x => x.id === id); if (!h) return;
-  const s = h.snapshot || {};
+  const s = h.snapshot || {}, c = catOf(historyCat(h));
+  const sub = c.main === 'amount' ? h.unitPrice : h.perUse;
   const row = (k, v) => `<dt class="text-sub">${k}</dt><dd class="text-right num">${v}</dd>`;
   openSheet(`
     <div class="text-xs text-sub num">${esc(h.date)}　${esc(storeLabel(h))}${isBuy(h) ? '' : '（価格だけ記録）'}</div>
     <h2 class="text-xl font-black leading-snug">${esc(s.brand)} ${esc(s.name)} <span class="num">${esc(s.size)}</span></h2>
     ${s.jan_code ? `<div class="text-xs text-sub num">JAN ${esc(s.jan_code)}</div>` : ''}
     <div class="mt-3 flex items-end justify-between rounded-2xl bg-sage px-4 py-3">
-      <div><div class="text-xs text-sub">1枚あたり</div><div class="num text-4xl font-extrabold">${yen(h.unitPrice,1)}</div></div>
-      <div class="text-right"><div class="text-xs text-sub">1回あたり</div><div class="num text-xl font-semibold">${h.perUse != null ? yen(h.perUse,1) : '—'}</div></div>
+      <div><div class="text-xs text-sub">${c.mainLabel}</div><div class="num text-4xl font-extrabold">${fmtMain(c, mainOf(h))}</div></div>
+      <div class="text-right"><div class="text-xs text-sub">${c.subLabel}</div><div class="num text-xl font-semibold">${fmtSub(c, sub)}</div></div>
     </div>
     <dl class="mt-3 grid grid-cols-2 gap-y-1.5 text-sm fs-stack">
       ${row('店頭価格', yen(h.shelfPrice) + (h.tax === 'ex' ? '（税抜）' : '（税込）'))}
@@ -1158,7 +1329,8 @@ function openHistory(id){
       ${row('支払額 / パック', yen(h.pay))}
       ${row('パック数', h.packs)}
       ${row('合計', yen(h.total))}
-      ${row('入数 / 吸収回数', `${h.qty}枚 / ${h.times ?? '—'}回`)}
+      ${row('入数 / ' + c.amountName, `${h.qty}${c.countUnit} / ${h.times ?? '—'}${c.amountUnit}`)}
+      ${c.plyOptions ? row(c.plyLabel, plyText(c, h.ply || c.plyBase)) : ''}
     </dl>
     <div class="mt-3 grid grid-cols-2 gap-2 fs-stack">
       ${kindToggleHtml(isBuy(h) ? 'buy' : 'check', 'e')}
@@ -1180,9 +1352,11 @@ function openHistory(id){
     $('#hDel', root).onclick = async () => { if (!confirm('この履歴を削除しますか？')) return; await DB.del('history', h.id); await loadHistory(); renderHistory(); renderProducts(); closeSheet(); toast('履歴を削除しました'); };
     $('#hRe', root).onclick = () => {
       closeSheet();
+      if (c.id !== state.cat) switchCategory(c.id, true);
       selectCalcProduct(productBy(h.uid) ? h.uid : '', false);
       $('#cPrice').value = h.shelfPrice; $('#cQty').value = h.qty; $('#cTimes').value = h.times ?? '';
       $('#cPct').value = h.discountPct || ''; $('#cYen').value = h.discountYen || '';
+      if (c.plyOptions){ state.calc.ply = h.ply || c.plyBase; renderPlyChips(); }
       state.calc.tax = h.tax || 'in'; syncTax(); calc(); show('calc');
     };
   });
@@ -1275,19 +1449,32 @@ $('#fileImport').addEventListener('change', async e => {
 });
 $('#btnAddProduct').addEventListener('click', () => openAddProduct({ gender:'男女共用' }));
 function openAddProduct(prefill){
+  const addCat = CAT[prefill.category] ? prefill.category : state.cat;
   openSheet(`<h2 class="text-lg font-black mb-1">新しい商品を登録</h2>
-    <p class="text-xs text-sub mb-3">パッケージを見ながら入力してください。「ネットで検索」で商品ページを確認できます。</p>
+    <p class="text-xs text-sub mb-2">パッケージを見ながら入力してください。「ネットで検索」で商品ページを確認できます。</p>
+    <div class="mb-3 grid grid-cols-3 gap-1 p-1 rounded-xl border border-line bg-white" role="group" aria-label="品目">
+      ${CATEGORIES.map(c => `<button type="button" data-addcat="${c.id}" class="h-10 rounded-lg text-xs font-bold leading-tight ${c.id === addCat ? 'bg-ink text-white' : 'text-sub'}">${c.icon} ${c.tab.replace('<br>', '')}</button>`).join('')}
+    </div>
     ${prefill.jan_code ? `<a href="${esc(searchUrl(prefill.jan_code))}" target="_blank" rel="noopener noreferrer" class="mb-3 h-11 rounded-xl border border-line font-bold flex items-center justify-center text-sm">JAN ${esc(prefill.jan_code)} をネットで検索</a>` : ''}
     ${AI.has() ? `<div class="mb-3 grid grid-cols-3 gap-2">
       <button type="button" data-pkg="cam" class="col-span-2 h-12 rounded-xl bg-leaf text-white font-bold text-sm">パッケージを撮って入力（AI）</button>
       <button type="button" data-pkg="lib" class="h-12 rounded-xl border border-leaf text-leaf font-bold text-sm">写真から</button></div>` : ''}
-    ${productForm(prefill)}
+    <div id="addForm">${productForm({ ...prefill, category: addCat })}</div>
     <button type="button" id="aSave" class="mt-4 mb-2 w-full h-14 rounded-2xl bg-leaf text-white font-bold text-lg">登録する</button>`, root => {
+    $$('[data-addcat]', root).forEach(b => b.addEventListener('click', () => {
+      const cur = readProductForm(root); cur.category = b.dataset.addcat;
+      if (cur.times == null || !Number.isFinite(cur.times)) cur.times = '';
+      if (!Number.isFinite(cur.quantity)) cur.quantity = '';
+      $('#addForm', root).innerHTML = productForm(cur);
+      $$('[data-addcat]', root).forEach(x => x.className = 'h-10 rounded-lg text-xs font-bold leading-tight ' + (x === b ? 'bg-ink text-white' : 'text-sub'));
+    }));
     $('#aSave', root).onclick = async () => {
       const d = readProductForm(root); const err = validProduct(d); if (err) return toast(err);
       if (d.jan_code && productByJan(d.jan_code)) return toast('このJANはすでに登録されています');
       await DB.put('products', { ...d, uid:'c:' + Date.now().toString(36), source:'custom', createdAt:Date.now() });
-      await refreshProducts(); closeSheet(); toast('商品を登録しました');
+      await refreshProducts(); closeSheet();
+      if (d.category !== state.cat) switchCategory(d.category, true);
+      toast('商品を登録しました');
     };
   });
 }
@@ -1411,39 +1598,60 @@ async function imageToB64(file, maxSide = 1400){
 const NULLABLE = t => ({ type:t, nullable:true });
 const TAG_SCHEMA = { type:'OBJECT', properties:{
   price_yen: NULLABLE('NUMBER'), tax:{ type:'STRING', enum:['in','ex','unknown'] }, already_discounted:{ type:'BOOLEAN' },
-  discount_percent: NULLABLE('NUMBER'), discount_yen: NULLABLE('NUMBER'), quantity: NULLABLE('INTEGER'),
+  discount_percent: NULLABLE('NUMBER'), discount_yen: NULLABLE('NUMBER'), quantity: NULLABLE('INTEGER'), amount_per_unit: NULLABLE('NUMBER'),
   brand: NULLABLE('STRING'), product_name: NULLABLE('STRING'), size: NULLABLE('STRING'), jan_code: NULLABLE('STRING'),
   notes: NULLABLE('STRING'), confidence:{ type:'STRING', enum:['high','medium','low'] }
 }, required:['price_yen','tax','confidence'] };
-const TAG_PROMPT = `あなたは日本のドラッグストアの値札・POP・チラシを読み取るアシスタントです。
-写真の大人用紙おむつ（パンツタイプなど）の値札から、次の項目をJSONで返してください。
+// 品目ごとの読み方
+const AI_HINTS = {
+  diaper: { what:'大人用紙おむつ（パンツタイプなど）',
+    qty:'quantity: 1パックの枚数（例「30枚」→30）。',
+    amount:'amount_per_unit: 1枚あたりの吸収回数（例「約4回分」→4）。値札に無ければ null。',
+    size:'size: サイズ表記（S / M / L / LL / M-L など）。' },
+  toilet: { what:'トイレットペーパー',
+    qty:'quantity: 1パックのロール数（例「12ロール」→12）。「12ロールで24ロール分」のような表記は実際のロール数（12）を入れる。',
+    amount:'amount_per_unit: 1ロールの長さ（m）。例「25m」→25、「2倍巻き 50m」→50。書かれていなければ null。',
+    size:'size: 「シングル」「ダブル」「トリプル（3枚重ね）」のどれか。書かれていなければ null。' },
+  tissue: { what:'ボックスティッシュ',
+    qty:'quantity: 1パックの箱数（例「5箱」→5）。',
+    amount:'amount_per_unit: 1箱あたりの組数。「400枚（200組）」なら200。枚数しか書かれていなければ枚数÷2。',
+    size:'size: 「3枚重ね」「保湿」「コンパクト」など、重ね枚数や種類があれば短く（例「3枚重ね 保湿」）。無ければ null。' }
+};
+function tagPrompt(cat){
+  const h = AI_HINTS[cat.id];
+  return `あなたは日本のドラッグストア・スーパーの値札・POP・チラシを読み取るアシスタントです。
+写真の${h.what}の値札から、次の項目をJSONで返してください。
 - price_yen: 1パックを買うときの価格（円、数字のみ）。通常価格と特価が両方あれば特価を入れ、already_discounted を true にする。税込と税抜が両方あれば税込を入れる。
 - tax: price_yen が税込なら "in"、税抜（本体価格）なら "ex"、判断できなければ "unknown"。
 - discount_percent / discount_yen: 「レジにて30%OFF」「〇円引き」のように price_yen からさらに引かれる割引だけ。無ければ null。
-- quantity: 1パックの枚数（例「30枚」→30）。
-- brand / product_name / size: 読み取れた文字をそのまま（例: アテント / うす型さらさらパンツ / M）。
+- ${h.qty}
+- ${h.amount}
+- ${h.size}
+- brand / product_name: 読み取れた文字をそのまま。
 - jan_code: バーコード下の数字が8桁か13桁すべてはっきり読める場合だけ。
 - notes: ポイント倍率・期間・会員価格・数量限定など、買い物のメモになる補足を短く。
 - confidence: 全体の読み取りの確かさ。
 読み取れない項目は推測せず null にしてください。値札が複数写っている場合は中央の一番大きいものを対象にしてください。`;
+}
 
 const PKG_SCHEMA = { type:'OBJECT', properties:{
-  maker: NULLABLE('STRING'), brand: NULLABLE('STRING'), product_name: NULLABLE('STRING'), size: NULLABLE('STRING'),
-  gender: NULLABLE('STRING'), absorbency_level: NULLABLE('STRING'), absorbency_times: NULLABLE('NUMBER'),
+  maker: NULLABLE('STRING'), brand: NULLABLE('STRING'), product_name: NULLABLE('STRING'), size: NULLABLE('STRING'), sheet_size: NULLABLE('STRING'),
+  gender: NULLABLE('STRING'), absorbency_level: NULLABLE('STRING'), amount_per_unit: NULLABLE('NUMBER'),
   quantity: NULLABLE('INTEGER'), jan_code: NULLABLE('STRING'), confidence:{ type:'STRING', enum:['high','medium','low'] }
 }, required:['confidence'] };
-const PKG_PROMPT = `あなたは日本の大人用紙おむつのパッケージを読み取るアシスタントです。写真から次の項目をJSONで返してください。
-- maker: メーカー名（例: 大王製紙、ユニ・チャーム、花王、白十字、リブドゥコーポレーション）。パッケージに書かれていれば。
-- brand: ブランド名（例: アテント、ライフリー、リリーフ、サルバ、リフレ）。
-- product_name: 商品名（ブランド名とサイズ・枚数を除いた部分）。
-- size: サイズ表記（S / M / L / LL / M-L など）。
-- gender: 男女共用 / 女性用 / 男性用。書かれていなければ null。
-- absorbency_level: 吸収量の表記をそのまま（例「約4回分」「600mL」）。
-- absorbency_times: 吸収回数の数字（「約4回分」→4）。回数の表記がなければ null。
-- quantity: 入り枚数。
-- jan_code: バーコード下の数字が8桁か13桁すべてはっきり読める場合だけ。
+function pkgPrompt(cat){
+  const h = AI_HINTS[cat.id];
+  return `あなたは日本の${h.what}のパッケージを読み取るアシスタントです。写真から次の項目をJSONで返してください。
+- maker: メーカー名。パッケージに書かれていれば。
+- brand: ブランド名。
+- product_name: 商品名（ブランド名・サイズ・入数を除いた部分）。
+- ${h.size}
+- ${h.qty}
+- ${h.amount}
+${cat.id === 'tissue' ? '- sheet_size: 1枚の大きさの表記（例「217×197mm」）。書かれていなければ null。\n' : ''}${cat.id === 'diaper' ? '- gender: 男女共用 / 女性用 / 男性用。書かれていなければ null。\n- absorbency_level: 吸収量の表記をそのまま（例「約4回分」「600mL」）。\n' : ''}- jan_code: バーコード下の数字が8桁か13桁すべてはっきり読める場合だけ。
 - confidence: 全体の読み取りの確かさ。
 読み取れない項目は推測せず null にしてください。`;
+}
 
 /* ---- 処理中の表示（シートの上に重ねる） ---- */
 let aiAbort = null;
@@ -1477,24 +1685,26 @@ function pickPhoto(purpose, fromCamera){
 ['#aiCam', '#aiLib'].forEach(sel => $(sel).addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   if (aiPurpose === 'package') return handlePackagePhoto(f);
-  const r = await runAi(f, TAG_PROMPT, TAG_SCHEMA);
+  const r = await runAi(f, tagPrompt(curCat()), TAG_SCHEMA);
   if (r) openTagResult(r.json);
 }));
 
 /* ---- 値札の読み取り結果 ---- */
 function matchProducts(r){
   const jan = String(r.jan_code || '').replace(/\D/g, '');
-  if (validJan(jan)){ const p = productByJan(jan); if (p) return [{ p, sc:100 }]; }
+  if (validJan(jan)){ const p = productByJan(jan); if (p && p.category === state.cat) return [{ p, sc:100 }]; }
   const text = norm([r.brand, r.product_name].filter(Boolean).join(' '));
   const sz = norm(r.size || '').replace(/サイズ/g, '').replace(/[〜~ー－]/g, '-').trim();
   if (!text && !sz && !r.quantity) return [];
-  return state.products.map(p => {
+  return catProducts().map(p => {
     let sc = 0;
     if (text && p.brand && text.includes(norm(p.brand))) sc += 30;
     norm(p.name).split(/[\s（）()]+/).filter(t => t.length >= 2).forEach(t => { if (text.includes(t)) sc += 8; });
     const ps = norm(p.size);
     if (sz && ps === sz) sc += 20; else if (sz && (ps.includes(sz) || sz.includes(ps))) sc += 6;
     if (r.quantity && p.quantity === r.quantity) sc += 25;
+    if (r.amount_per_unit && p.times && Math.abs(p.times - r.amount_per_unit) < 0.01) sc += 15;
+    const rp = plyFromText(catOf(p.category), r.size); if (rp && p.ply && rp !== p.ply) sc -= 30;
     return { p, sc };
   }).filter(x => x.sc >= 40).sort((a, b) => b.sc - a.sc).slice(0, 3);
 }
@@ -1506,7 +1716,8 @@ function openTagResult(r){
   const jan = String(r.jan_code || '').replace(/\D/g, '');
   const unknownJan = validJan(jan) && !productByJan(jan);
   const conf = CONF[r.confidence] || CONF.medium;
-  const readName = [r.brand, r.product_name, r.size, r.quantity ? r.quantity + '枚' : ''].filter(Boolean).join(' ');
+  const c = curCat();
+  const readName = [r.brand, r.product_name, r.size, r.quantity ? r.quantity + c.countUnit : '', r.amount_per_unit && c.id !== 'diaper' ? r.amount_per_unit + c.amountUnit : ''].filter(Boolean).join(' ');
   const opt = (uid, label, sub) => `<label class="flex items-start gap-3 px-3 py-2.5 border-b border-line last:border-b-0">
       <input type="radio" name="aiProd" value="${esc(uid)}" ${uid === def ? 'checked' : ''} class="mt-1 w-5 h-5 shrink-0 accent-[#0E6B5E]">
       <span class="min-w-0"><span class="font-bold block leading-snug">${label}</span>${sub ? `<span class="text-xs text-sub">${sub}</span>` : ''}</span></label>`;
@@ -1518,7 +1729,7 @@ function openTagResult(r){
     ${readName ? `<p class="mt-2 text-sm">読み取った商品：<span class="font-bold">${esc(readName)}</span></p>` : ''}
     <h3 class="mt-3 mb-1 text-sm font-bold">商品</h3>
     <div class="rounded-xl border border-line bg-white overflow-hidden">
-      ${cands.map(c => opt(c.p.uid, esc(c.p.brand + ' ' + c.p.name + ' ' + c.p.size), `${c.p.quantity}枚入${c.sc === 100 ? '・JAN一致' : ''}`)).join('')}
+      ${cands.map(c => opt(c.p.uid, esc(c.p.brand + ' ' + c.p.name + ' ' + c.p.size), `${c.p.quantity}${curCat().countUnit}入${c.p.category !== 'diaper' && c.p.times ? '・' + c.p.times + curCat().amountUnit : ''}${c.sc === 100 ? '・JAN一致' : ''}`)).join('')}
       ${cur && !cands.some(c => c.p.uid === cur.uid) ? opt(cur.uid, esc(cur.brand + ' ' + cur.name + ' ' + cur.size), '今選んでいる商品') : ''}
       ${opt('', '商品を選ばない', cands.length ? '' : '登録済みの商品と一致しませんでした')}
     </div>
@@ -1530,7 +1741,8 @@ function openTagResult(r){
           <option value="in" ${r.tax !== 'ex' ? 'selected' : ''}>税込</option>
           <option value="ex" ${r.tax === 'ex' ? 'selected' : ''}>税抜</option>
         </select></label>
-      ${f('aiQty', '入数（枚）', r.quantity, 'inputmode="numeric" placeholder="商品の標準"')}
+      ${f('aiQty', `入数（${c.countUnit}）`, r.quantity, 'inputmode="numeric" placeholder="商品の標準"')}
+      ${c.id !== 'diaper' ? f('aiAmt', `${c.amountName}（${c.amountUnit}）`, r.amount_per_unit, 'inputmode="decimal" placeholder="商品の標準"') : ''}
       ${f('aiPct', '割引率（%）', r.discount_percent || '', 'inputmode="decimal" placeholder="0"')}
       ${f('aiYen', '値引き（円）', r.discount_yen || '', 'inputmode="numeric" placeholder="0"')}
       <label class="block col-span-2"><span class="text-xs text-sub">メモ（記録するときに入ります）</span>
@@ -1540,13 +1752,15 @@ function openTagResult(r){
     <button type="button" id="aiApply" class="mt-4 mb-2 w-full h-14 rounded-2xl bg-leaf text-white font-bold text-lg">計算に入れる</button>
   `, root => {
     const reg = $('#aiRegister', root);
-    if (reg) reg.onclick = () => openAddProduct({ jan_code: jan, brand: r.brand || '', name: r.product_name || '', size: r.size || '', quantity: r.quantity || '', gender:'男女共用' });
+    if (reg) reg.onclick = () => openAddProduct({ jan_code: jan, brand: r.brand || '', name: r.product_name || '', size: r.size || '', quantity: r.quantity || '', times: c.id !== 'diaper' ? (r.amount_per_unit ?? '') : '', gender:'男女共用' });
     $('#aiApply', root).onclick = () => {
       const uid = (root.querySelector('input[name="aiProd"]:checked') || {}).value || '';
       const price = toNum($('#aiPrice', root).value);
       if (!(price > 0)) return toast('価格を入力してください');
       selectCalcProduct(uid, true);
       const q = toNum($('#aiQty', root).value); if (q > 0) $('#cQty').value = q;
+      const amtEl = $('#aiAmt', root); const amt = amtEl ? toNum(amtEl.value) : NaN; if (amt > 0) $('#cTimes').value = amt;
+      const rp = plyFromText(c, r.size); if (c.plyOptions && rp){ state.calc.ply = rp; renderPlyChips(); }
       $('#cPrice').value = price;
       $('#cPct').value = toNum($('#aiPct', root).value) > 0 ? toNum($('#aiPct', root).value) : '';
       $('#cYen').value = toNum($('#aiYen', root).value) > 0 ? toNum($('#aiYen', root).value) : '';
@@ -1560,10 +1774,14 @@ function openTagResult(r){
 
 /* ---- パッケージ写真 → 商品登録フォーム ---- */
 async function handlePackagePhoto(file){
-  const r = await runAi(file, PKG_PROMPT, PKG_SCHEMA); if (!r) return;
+  const pc = catOf(($('#pCat') || {}).value || state.cat);
+  const r = await runAi(file, pkgPrompt(pc), PKG_SCHEMA); if (!r) return;
   const d = r.json, set = (id, v) => { const el = $('#' + id); if (el && v != null && v !== '') el.value = v; };
   set('pMaker', d.maker); set('pBrand', d.brand); set('pName', d.product_name); set('pSize', d.size);
-  set('pGender', d.gender); set('pAbs', d.absorbency_level); set('pTimes', d.absorbency_times); set('pQty', d.quantity);
+  set('pGender', d.gender); set('pAbs', d.absorbency_level); set('pTimes', d.amount_per_unit); set('pQty', d.quantity);
+  set('pSheet', d.sheet_size);
+  const ply = plyFromText(pc, d.size); if (ply) set('pPly', String(ply));
+  if (pc.id === 'tissue' && d.size) set('pSize', String(d.size).replace(/[23]枚重ね/g, '').trim() || null);
   const jan = String(d.jan_code || '').replace(/\D/g, '');
   const janEl = $('#pJan');
   let msg = '読み取った内容を入れました。確認してから登録してください';
@@ -1698,8 +1916,11 @@ $('#btnDisplay2').addEventListener('click', openDisplaySettings);
   try {
     if (!localStorage.getItem('omutsu-display')){ const m = await DB.get('meta', 'display'); if (m && m.value) applyDisplay(m.value); }
   } catch(e){}
+  try {
+    if (!localStorage.getItem('omutsu-cat')){ const m = await DB.get('meta', 'category'); if (m && CAT[m.value]) state.cat = m.value; }
+  } catch(e){}
   await loadProducts(); await loadHistory(); await AI.load();
-  renderAiBar();
+  renderAiBar(); renderCatBar(); renderCatLabels();
   renderChips(); renderProducts(); fillCalcSelect(); syncTax(); calc(); renderBadge();
   const start = location.hash.slice(1);
   show(['search','calc','history','settings'].includes(start) ? start : 'search');
