@@ -143,6 +143,7 @@ tailwind.config = {
 
   <!-- ===== 計算 ===== -->
   <section id="view-calc" data-view="calc" hidden>
+    <div id="aiBar" class="mb-4"></div>
     <span class="text-sm font-bold">商品</span>
     <div class="mt-1 flex gap-2">
       <label class="block flex-1 min-w-0"><span class="sr-only">商品を選ぶ</span>
@@ -250,6 +251,7 @@ tailwind.config = {
       <p class="mt-1 text-sm text-sub">画面の右上「文字」ボタンからも変えられます。</p>
       <button id="btnDisplay2" type="button" class="mt-3 w-full h-12 rounded-xl bg-ink text-white font-bold">表示を変える</button>
     </div>
+    <div id="aiSettings" class="bg-paper border border-line rounded-2xl p-4 mb-3 scroll-mt-20"></div>
     <div class="bg-paper border border-line rounded-2xl p-4">
       <h2 class="font-bold">保存の状態</h2>
       <p id="persistInfo" class="mt-1 text-sm text-sub leading-relaxed"></p>
@@ -318,6 +320,16 @@ tailwind.config = {
   <div id="sheet" role="dialog" aria-modal="true" class="sheet sheet-enter absolute bottom-0 inset-x-0 max-w-xl mx-auto bg-paper rounded-t-3xl overflow-y-auto">
     <div class="sticky top-0 bg-paper pt-2 pb-1 flex justify-center"><span class="w-10 h-1.5 rounded-full bg-line"></span></div>
     <div id="sheetBody" class="px-5 pt-2"></div>
+  </div>
+</div>
+
+<input id="aiCam" type="file" accept="image/*" capture="environment" class="sr-only" tabindex="-1" aria-hidden="true">
+<input id="aiLib" type="file" accept="image/*" class="sr-only" tabindex="-1" aria-hidden="true">
+<div id="aiBusy" class="fixed inset-0 z-[55] hidden bg-ink/60 flex items-center justify-center p-6" role="alertdialog" aria-live="assertive">
+  <div class="bg-paper rounded-3xl px-6 py-6 w-full max-w-xs text-center shadow-xl">
+    <div class="mx-auto w-12 h-12 rounded-full border-4 border-mint border-t-leaf animate-spin"></div>
+    <p id="aiBusyText" class="mt-4 font-bold">AIが読み取っています…</p>
+    <button id="aiBusyCancel" type="button" class="mt-4 w-full h-12 rounded-xl border border-line font-bold">中止</button>
   </div>
 </div>
 
@@ -625,6 +637,8 @@ function openSheet(html, onMount){
 function closeSheet(){ $('#sheetWrap').classList.add('hidden'); document.body.style.overflow = ''; }
 $('#sheetBackdrop').addEventListener('click', closeSheet);
 $('#sheetBody').addEventListener('click', e => {
+  const pkg = e.target.closest('[data-pkg]');
+  if (pkg){ pickPhoto('package', pkg.dataset.pkg === 'cam'); return; }
   const tag = e.target.closest('[data-memo-tag]');
   if (tag){ const ta = $('#' + tag.dataset.target); if (ta){ const v = ta.value.trim(); if (!v.includes(tag.dataset.memoTag)) ta.value = v ? v + '、' + tag.dataset.memoTag : tag.dataset.memoTag; } return; }
   const kb = e.target.closest('.kindbtn');
@@ -1017,7 +1031,7 @@ function calc(){
   const pos = Math.min(1, Math.max(0, (ratio - 0.6) / 0.8));
   marker.style.left = (pos * 100) + '%'; marker.style.opacity = 1;
 }
-$('#cReset').addEventListener('click', () => { ['#cPrice','#cPct','#cYen'].forEach(s => $(s).value = ''); state.calc.tax = 'in'; syncTax(); selectCalcProduct(state.calc.uid, true); });
+$('#cReset').addEventListener('click', () => { state.calc.pendingMemo = ''; ['#cPrice','#cPct','#cYen'].forEach(s => $(s).value = ''); state.calc.tax = 'in'; syncTax(); selectCalcProduct(state.calc.uid, true); });
 
 $('#cSave').addEventListener('click', () => {
   const r = currentCalc(); if (!r.ok) return;
@@ -1032,7 +1046,7 @@ $('#cSave').addEventListener('click', () => {
       <label class="block"><span class="text-xs text-sub" id="sDateLabel">購入日</span><input id="sDate" type="date" value="${todayStr()}" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>
       <label class="block" id="sPacksWrap"><span class="text-xs text-sub">パック数</span><input id="sPacks" type="text" inputmode="numeric" value="1" class="num mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>
       ${p ? '' : `<label class="block col-span-2"><span class="text-xs text-sub">商品名</span><input id="sName" placeholder="例：〇〇パンツ Lサイズ" class="mt-0.5 w-full h-11 px-3 rounded-xl bg-white border border-line"></label>`}
-      ${memoFieldHtml({}, 's')}
+      ${memoFieldHtml({ memo: state.calc.pendingMemo || '' }, 's')}
     </div>
     <p class="mt-2 text-xs text-sub">「価格だけ記録」は支出に含めず、お店の比較にだけ使います。</p>
     <button type="button" id="sOk" class="mt-4 mb-2 w-full h-14 rounded-2xl bg-leaf text-white font-bold text-lg">保存する</button>
@@ -1055,6 +1069,7 @@ $('#cSave').addEventListener('click', () => {
         refUnit: p ? p.refUnit : null, createdAt: Date.now()
       };
       try { await DB.put('history', rec); } catch(e){ return toast('保存に失敗しました：' + e.message); }
+      state.calc.pendingMemo = '';
       await loadHistory(); closeSheet(); calc(); renderProducts(); toast(kind === 'check' ? '価格を記録しました' : '購入履歴に保存しました');
     };
   });
@@ -1189,6 +1204,7 @@ async function renderBadge(){
 }
 $('#storageBadge').addEventListener('click', () => show('settings'));
 async function renderSettings(){
+  renderAiSettings();
   const { persisted, est } = await storageStatus();
   const used = est?.usage != null ? (est.usage / 1024).toFixed(0) + ' KB 使用' : '';
   $('#persistInfo').textContent = DB.fallback
@@ -1262,6 +1278,9 @@ function openAddProduct(prefill){
   openSheet(`<h2 class="text-lg font-black mb-1">新しい商品を登録</h2>
     <p class="text-xs text-sub mb-3">パッケージを見ながら入力してください。「ネットで検索」で商品ページを確認できます。</p>
     ${prefill.jan_code ? `<a href="${esc(searchUrl(prefill.jan_code))}" target="_blank" rel="noopener noreferrer" class="mb-3 h-11 rounded-xl border border-line font-bold flex items-center justify-center text-sm">JAN ${esc(prefill.jan_code)} をネットで検索</a>` : ''}
+    ${AI.has() ? `<div class="mb-3 grid grid-cols-3 gap-2">
+      <button type="button" data-pkg="cam" class="col-span-2 h-12 rounded-xl bg-leaf text-white font-bold text-sm">パッケージを撮って入力（AI）</button>
+      <button type="button" data-pkg="lib" class="h-12 rounded-xl border border-leaf text-leaf font-bold text-sm">写真から</button></div>` : ''}
     ${productForm(prefill)}
     <button type="button" id="aSave" class="mt-4 mb-2 w-full h-14 rounded-2xl bg-leaf text-white font-bold text-lg">登録する</button>`, root => {
     $('#aSave', root).onclick = async () => {
@@ -1282,6 +1301,340 @@ $('#btnResetProducts').addEventListener('click', async () => {
   for (const p of all) if (p.source === 'override') await DB.del('products', p.uid);
   await refreshProducts(); toast('商品の編集を戻しました');
 });
+
+/* ========================= Gemini AI（任意・各自のAPIキー） =========================
+   ・キーは端末内の IndexedDB（meta: gemini）にだけ保存
+   ・送信するのは撮影した写真と指示文だけ（購入履歴は送らない）
+   ・使えるモデルはキー登録時に一覧を取得して自動選択（名前の変更に強くするため）
+   =================================================================================== */
+const AI = (() => {
+  const BASE = 'https://generativelanguage.googleapis.com/v1beta';
+  const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+  let cfg = null;
+
+  async function load(){ try { const m = await DB.get('meta', 'gemini'); cfg = m && m.value ? m.value : null; } catch(e){ cfg = null; } }
+  async function save(v){ cfg = v; await DB.put('meta', { key:'gemini', value:v }); }
+  async function remove(){ cfg = null; await DB.del('meta', 'gemini'); }
+  const has = () => !!(cfg && cfg.key);
+  const get = () => cfg;
+
+  function rankModels(names){
+    return names
+      .filter(n => /flash/.test(n) && !/(image|tts|audio|live|embed|computer|robotics|native|thinking)/.test(n))
+      .map(n => {
+        const m = n.match(/gemini-(\d+(?:\.\d+)?)/); let sc = (m ? parseFloat(m[1]) : 0) * 10;
+        if (/lite/.test(n)) sc -= 4;
+        if (/preview|exp/.test(n)) sc -= 1;
+        if (/-\d{3}$|\d{2}-\d{2,4}$/.test(n)) sc -= 0.5;
+        return { n, sc };
+      })
+      .sort((a, b) => b.sc - a.sc).map(x => x.n);
+  }
+  function friendlyError(status, msg){
+    msg = msg || '';
+    if (status === 400 && /api key|API_KEY/i.test(msg)) return 'APIキーが正しくないようです。コピーし直して登録してください';
+    if (status === 401 || status === 403) return 'このAPIキーでは使えません（権限・制限を確認してください）';
+    if (status === 429) return '無料枠の回数上限に達しました。少し時間をおいてから試してください';
+    if (status >= 500) return 'Gemini側が混み合っています。少し待ってから試してください';
+    return 'AIの呼び出しに失敗しました' + (msg ? '：' + msg.slice(0, 80) : '');
+  }
+  async function listModels(key){
+    const res = await fetch(BASE + '/models?pageSize=1000', { headers:{ 'x-goog-api-key': key } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(friendlyError(res.status, data.error && data.error.message));
+    const names = (data.models || [])
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map(m => String(m.name || '').replace(/^models\//, ''));
+    return rankModels(names);
+  }
+  function thinkingFor(model){
+    if (/gemini-2\.5/.test(model)) return { thinkingBudget: 0 };
+    if (/gemini-3/.test(model)) return { thinkingLevel: 'low' };
+    return null;
+  }
+  async function callModel(model, body, signal, withThinking){
+    const b = JSON.parse(JSON.stringify(body));
+    const th = withThinking ? thinkingFor(model) : null;
+    if (th) b.generationConfig.thinkingConfig = th;
+    const res = await fetch(`${BASE}/models/${encodeURIComponent(model)}:generateContent`, {
+      method:'POST', signal,
+      headers:{ 'Content-Type':'application/json', 'x-goog-api-key': cfg.key },
+      body: JSON.stringify(b)
+    });
+    const data = await res.json().catch(() => ({}));
+    return { res, data };
+  }
+  // 画像＋指示 → JSON（モデルが使えなければ次の候補へ）
+  async function extract({ prompt, imageB64, schema, signal }){
+    if (!has()) throw new Error('APIキーが登録されていません');
+    const body = {
+      contents:[{ role:'user', parts:[ { inline_data:{ mime_type:'image/jpeg', data:imageB64 } }, { text:prompt } ] }],
+      generationConfig:{ temperature:0, responseMimeType:'application/json', responseSchema:schema }
+    };
+    const order = [...new Set([cfg.model, ...(cfg.models || []), ...FALLBACK_MODELS].filter(Boolean))].slice(0, 4);
+    let lastErr = null, notFound = false;
+    for (const model of order){
+      let { res, data } = await callModel(model, body, signal, true);
+      if (res.status === 400 && !/api key/i.test(data.error?.message || '')) ({ res, data } = await callModel(model, body, signal, false));
+      if (res.ok){
+        const cand = data.candidates && data.candidates[0];
+        if (!cand) throw new Error(data.promptFeedback?.blockReason ? 'この画像は読み取れませんでした（' + data.promptFeedback.blockReason + '）' : 'AIから結果が返りませんでした');
+        const text = (cand.content?.parts || []).map(p => p.text || '').join('').replace(/```json|```/g, '').trim();
+        try {
+          const json = JSON.parse(text);
+          // モデルが廃止（404）されていた場合だけ、次回から使うモデルを切り替える
+          if (notFound && model !== cfg.model){ cfg.model = model; save(cfg).catch(() => {}); }
+          return { json, model };
+        } catch(e){ throw new Error('AIの結果を読み取れませんでした。もう一度撮ってください'); }
+      }
+      if (res.status === 404) notFound = true;
+      lastErr = new Error(friendlyError(res.status, data.error?.message));
+      if (![404, 429, 500, 503].includes(res.status)) break; // キー不正などは他モデルでも同じ
+    }
+    throw lastErr || new Error('AIの呼び出しに失敗しました');
+  }
+  return { load, save, remove, has, get, listModels, extract };
+})();
+
+async function imageToB64(file, maxSide = 1400){
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('画像を開けません')); i.src = url; });
+    const sc = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * sc); c.height = Math.round(img.naturalHeight * sc);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.82).split(',')[1];
+  } finally { URL.revokeObjectURL(url); }
+}
+
+const NULLABLE = t => ({ type:t, nullable:true });
+const TAG_SCHEMA = { type:'OBJECT', properties:{
+  price_yen: NULLABLE('NUMBER'), tax:{ type:'STRING', enum:['in','ex','unknown'] }, already_discounted:{ type:'BOOLEAN' },
+  discount_percent: NULLABLE('NUMBER'), discount_yen: NULLABLE('NUMBER'), quantity: NULLABLE('INTEGER'),
+  brand: NULLABLE('STRING'), product_name: NULLABLE('STRING'), size: NULLABLE('STRING'), jan_code: NULLABLE('STRING'),
+  notes: NULLABLE('STRING'), confidence:{ type:'STRING', enum:['high','medium','low'] }
+}, required:['price_yen','tax','confidence'] };
+const TAG_PROMPT = `あなたは日本のドラッグストアの値札・POP・チラシを読み取るアシスタントです。
+写真の大人用紙おむつ（パンツタイプなど）の値札から、次の項目をJSONで返してください。
+- price_yen: 1パックを買うときの価格（円、数字のみ）。通常価格と特価が両方あれば特価を入れ、already_discounted を true にする。税込と税抜が両方あれば税込を入れる。
+- tax: price_yen が税込なら "in"、税抜（本体価格）なら "ex"、判断できなければ "unknown"。
+- discount_percent / discount_yen: 「レジにて30%OFF」「〇円引き」のように price_yen からさらに引かれる割引だけ。無ければ null。
+- quantity: 1パックの枚数（例「30枚」→30）。
+- brand / product_name / size: 読み取れた文字をそのまま（例: アテント / うす型さらさらパンツ / M）。
+- jan_code: バーコード下の数字が8桁か13桁すべてはっきり読める場合だけ。
+- notes: ポイント倍率・期間・会員価格・数量限定など、買い物のメモになる補足を短く。
+- confidence: 全体の読み取りの確かさ。
+読み取れない項目は推測せず null にしてください。値札が複数写っている場合は中央の一番大きいものを対象にしてください。`;
+
+const PKG_SCHEMA = { type:'OBJECT', properties:{
+  maker: NULLABLE('STRING'), brand: NULLABLE('STRING'), product_name: NULLABLE('STRING'), size: NULLABLE('STRING'),
+  gender: NULLABLE('STRING'), absorbency_level: NULLABLE('STRING'), absorbency_times: NULLABLE('NUMBER'),
+  quantity: NULLABLE('INTEGER'), jan_code: NULLABLE('STRING'), confidence:{ type:'STRING', enum:['high','medium','low'] }
+}, required:['confidence'] };
+const PKG_PROMPT = `あなたは日本の大人用紙おむつのパッケージを読み取るアシスタントです。写真から次の項目をJSONで返してください。
+- maker: メーカー名（例: 大王製紙、ユニ・チャーム、花王、白十字、リブドゥコーポレーション）。パッケージに書かれていれば。
+- brand: ブランド名（例: アテント、ライフリー、リリーフ、サルバ、リフレ）。
+- product_name: 商品名（ブランド名とサイズ・枚数を除いた部分）。
+- size: サイズ表記（S / M / L / LL / M-L など）。
+- gender: 男女共用 / 女性用 / 男性用。書かれていなければ null。
+- absorbency_level: 吸収量の表記をそのまま（例「約4回分」「600mL」）。
+- absorbency_times: 吸収回数の数字（「約4回分」→4）。回数の表記がなければ null。
+- quantity: 入り枚数。
+- jan_code: バーコード下の数字が8桁か13桁すべてはっきり読める場合だけ。
+- confidence: 全体の読み取りの確かさ。
+読み取れない項目は推測せず null にしてください。`;
+
+/* ---- 処理中の表示（シートの上に重ねる） ---- */
+let aiAbort = null;
+function aiBusy(on, text){
+  const el = $('#aiBusy');
+  if (on){ $('#aiBusyText').textContent = text || 'AIが読み取っています…'; el.classList.remove('hidden'); }
+  else el.classList.add('hidden');
+}
+$('#aiBusyCancel').addEventListener('click', () => { if (aiAbort) aiAbort.abort(); aiBusy(false); });
+
+async function runAi(file, prompt, schema){
+  aiAbort = new AbortController();
+  const timer = setTimeout(() => aiAbort && aiAbort.abort(), 60000);
+  aiBusy(true, '写真を準備しています…');
+  try {
+    const b64 = await imageToB64(file);
+    aiBusy(true, 'AIが読み取っています…（数秒〜20秒ほど）');
+    return await AI.extract({ prompt, imageB64: b64, schema, signal: aiAbort.signal });
+  } catch(e){
+    if (e.name === 'AbortError') { toast('読み取りを中止しました'); return null; }
+    toast(e.message || 'AIの読み取りに失敗しました'); return null;
+  } finally { clearTimeout(timer); aiBusy(false); aiAbort = null; }
+}
+
+/* ---- 写真の入力（撮影 / ライブラリ） ---- */
+let aiPurpose = 'tag';
+function pickPhoto(purpose, fromCamera){
+  aiPurpose = purpose;
+  (fromCamera ? $('#aiCam') : $('#aiLib')).click();
+}
+['#aiCam', '#aiLib'].forEach(sel => $(sel).addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  if (aiPurpose === 'package') return handlePackagePhoto(f);
+  const r = await runAi(f, TAG_PROMPT, TAG_SCHEMA);
+  if (r) openTagResult(r.json);
+}));
+
+/* ---- 値札の読み取り結果 ---- */
+function matchProducts(r){
+  const jan = String(r.jan_code || '').replace(/\D/g, '');
+  if (validJan(jan)){ const p = productByJan(jan); if (p) return [{ p, sc:100 }]; }
+  const text = norm([r.brand, r.product_name].filter(Boolean).join(' '));
+  const sz = norm(r.size || '').replace(/サイズ/g, '').replace(/[〜~ー－]/g, '-').trim();
+  if (!text && !sz && !r.quantity) return [];
+  return state.products.map(p => {
+    let sc = 0;
+    if (text && p.brand && text.includes(norm(p.brand))) sc += 30;
+    norm(p.name).split(/[\s（）()]+/).filter(t => t.length >= 2).forEach(t => { if (text.includes(t)) sc += 8; });
+    const ps = norm(p.size);
+    if (sz && ps === sz) sc += 20; else if (sz && (ps.includes(sz) || sz.includes(ps))) sc += 6;
+    if (r.quantity && p.quantity === r.quantity) sc += 25;
+    return { p, sc };
+  }).filter(x => x.sc >= 40).sort((a, b) => b.sc - a.sc).slice(0, 3);
+}
+const CONF = { high:['高い','text-good'], medium:['ふつう','text-fair'], low:['低い（要確認）','text-bad'] };
+function openTagResult(r){
+  const cands = matchProducts(r);
+  const cur = productBy(state.calc.uid);
+  const def = cands.length && cands[0].sc >= 60 ? cands[0].p.uid : (cur ? cur.uid : '');
+  const jan = String(r.jan_code || '').replace(/\D/g, '');
+  const unknownJan = validJan(jan) && !productByJan(jan);
+  const conf = CONF[r.confidence] || CONF.medium;
+  const readName = [r.brand, r.product_name, r.size, r.quantity ? r.quantity + '枚' : ''].filter(Boolean).join(' ');
+  const opt = (uid, label, sub) => `<label class="flex items-start gap-3 px-3 py-2.5 border-b border-line last:border-b-0">
+      <input type="radio" name="aiProd" value="${esc(uid)}" ${uid === def ? 'checked' : ''} class="mt-1 w-5 h-5 shrink-0 accent-[#0E6B5E]">
+      <span class="min-w-0"><span class="font-bold block leading-snug">${label}</span>${sub ? `<span class="text-xs text-sub">${sub}</span>` : ''}</span></label>`;
+  const f = (id, label, val, attrs='') => `<label class="block"><span class="text-xs text-sub">${label}</span><input id="${id}" value="${esc(val ?? '')}" ${attrs} class="num mt-0.5 w-full h-12 px-3 rounded-xl bg-white border border-line text-lg"></label>`;
+  openSheet(`
+    <h2 class="text-xl font-black">値札の読み取り結果</h2>
+    <p class="text-sm mt-1">読み取りの確かさ：<span class="font-bold ${conf[1]}">${conf[0]}</span></p>
+    <p class="text-xs text-sub">数字が合っているか確認してから「計算に入れる」を押してください。</p>
+    ${readName ? `<p class="mt-2 text-sm">読み取った商品：<span class="font-bold">${esc(readName)}</span></p>` : ''}
+    <h3 class="mt-3 mb-1 text-sm font-bold">商品</h3>
+    <div class="rounded-xl border border-line bg-white overflow-hidden">
+      ${cands.map(c => opt(c.p.uid, esc(c.p.brand + ' ' + c.p.name + ' ' + c.p.size), `${c.p.quantity}枚入${c.sc === 100 ? '・JAN一致' : ''}`)).join('')}
+      ${cur && !cands.some(c => c.p.uid === cur.uid) ? opt(cur.uid, esc(cur.brand + ' ' + cur.name + ' ' + cur.size), '今選んでいる商品') : ''}
+      ${opt('', '商品を選ばない', cands.length ? '' : '登録済みの商品と一致しませんでした')}
+    </div>
+    ${unknownJan ? `<button type="button" id="aiRegister" class="mt-2 w-full h-11 rounded-xl border border-leaf text-leaf font-bold text-sm">JAN ${esc(jan)} を新しい商品として登録</button>` : ''}
+    <div class="mt-3 grid grid-cols-2 gap-2 fs-stack">
+      <div class="col-span-2">${f('aiPrice', '店頭価格（円）', r.price_yen, 'inputmode="decimal"')}</div>
+      <label class="block"><span class="text-xs text-sub">税</span>
+        <select id="aiTax" class="mt-0.5 w-full h-12 px-3 rounded-xl bg-white border border-line">
+          <option value="in" ${r.tax !== 'ex' ? 'selected' : ''}>税込</option>
+          <option value="ex" ${r.tax === 'ex' ? 'selected' : ''}>税抜</option>
+        </select></label>
+      ${f('aiQty', '入数（枚）', r.quantity, 'inputmode="numeric" placeholder="商品の標準"')}
+      ${f('aiPct', '割引率（%）', r.discount_percent || '', 'inputmode="decimal" placeholder="0"')}
+      ${f('aiYen', '値引き（円）', r.discount_yen || '', 'inputmode="numeric" placeholder="0"')}
+      <label class="block col-span-2"><span class="text-xs text-sub">メモ（記録するときに入ります）</span>
+        <input id="aiNotes" value="${esc([r.already_discounted ? '特価' : '', r.notes || ''].filter(Boolean).join('、'))}" class="mt-0.5 w-full h-12 px-3 rounded-xl bg-white border border-line"></label>
+    </div>
+    ${r.tax === 'unknown' ? '<p class="mt-2 text-xs text-bad">税込か税抜か読み取れませんでした。値札を見て選んでください。</p>' : ''}
+    <button type="button" id="aiApply" class="mt-4 mb-2 w-full h-14 rounded-2xl bg-leaf text-white font-bold text-lg">計算に入れる</button>
+  `, root => {
+    const reg = $('#aiRegister', root);
+    if (reg) reg.onclick = () => openAddProduct({ jan_code: jan, brand: r.brand || '', name: r.product_name || '', size: r.size || '', quantity: r.quantity || '', gender:'男女共用' });
+    $('#aiApply', root).onclick = () => {
+      const uid = (root.querySelector('input[name="aiProd"]:checked') || {}).value || '';
+      const price = toNum($('#aiPrice', root).value);
+      if (!(price > 0)) return toast('価格を入力してください');
+      selectCalcProduct(uid, true);
+      const q = toNum($('#aiQty', root).value); if (q > 0) $('#cQty').value = q;
+      $('#cPrice').value = price;
+      $('#cPct').value = toNum($('#aiPct', root).value) > 0 ? toNum($('#aiPct', root).value) : '';
+      $('#cYen').value = toNum($('#aiYen', root).value) > 0 ? toNum($('#aiYen', root).value) : '';
+      state.calc.tax = $('#aiTax', root).value; syncTax();
+      state.calc.pendingMemo = $('#aiNotes', root).value.trim();
+      calc(); closeSheet(); show('calc');
+      toast('計算に入れました。内容を確認してください');
+    };
+  });
+}
+
+/* ---- パッケージ写真 → 商品登録フォーム ---- */
+async function handlePackagePhoto(file){
+  const r = await runAi(file, PKG_PROMPT, PKG_SCHEMA); if (!r) return;
+  const d = r.json, set = (id, v) => { const el = $('#' + id); if (el && v != null && v !== '') el.value = v; };
+  set('pMaker', d.maker); set('pBrand', d.brand); set('pName', d.product_name); set('pSize', d.size);
+  set('pGender', d.gender); set('pAbs', d.absorbency_level); set('pTimes', d.absorbency_times); set('pQty', d.quantity);
+  const jan = String(d.jan_code || '').replace(/\D/g, '');
+  const janEl = $('#pJan');
+  let msg = '読み取った内容を入れました。確認してから登録してください';
+  if (janEl && !janEl.value){
+    if (validJan(jan)) janEl.value = jan;
+    else if (jan) msg = 'JANは読み取りが不確かなので入れていません。バーコードの「読み取る」を使ってください';
+  }
+  toast(msg);
+}
+
+/* ---- 計算画面のAIボタン ---- */
+function renderAiBar(){
+  const el = $('#aiBar');
+  if (AI.has()){
+    el.innerHTML = `<div class="grid grid-cols-3 gap-2">
+      <button type="button" data-ai="cam" class="col-span-2 h-14 rounded-2xl bg-leaf text-white font-bold text-base flex items-center justify-center gap-2">
+        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>値札を撮って入力</button>
+      <button type="button" data-ai="lib" class="h-14 rounded-2xl border border-leaf text-leaf bg-paper font-bold text-sm leading-tight">写真から<br>選ぶ</button>
+    </div>`;
+  } else {
+    el.innerHTML = `<button type="button" data-ai="setup" class="w-full rounded-2xl border border-dashed border-line bg-paper px-4 py-3 text-left">
+      <span class="font-bold block">値札を撮るだけで入力（AI）</span>
+      <span class="text-xs text-sub">Gemini APIキーを登録すると使えます（データ タブ）</span></button>`;
+  }
+}
+$('#aiBar').addEventListener('click', e => {
+  const b = e.target.closest('[data-ai]'); if (!b) return;
+  if (b.dataset.ai === 'setup') { show('settings'); setTimeout(() => $('#aiSettings').scrollIntoView({ behavior:'smooth', block:'start' }), 50); return; }
+  pickPhoto('tag', b.dataset.ai === 'cam');
+});
+
+/* ---- 設定画面：キー登録 ---- */
+function renderAiSettings(){
+  const c = AI.get(), el = $('#aiSettings');
+  const note = `<p class="mt-3 text-xs text-sub leading-relaxed">送られるのは撮影した写真だけで、購入履歴やメモは送りません。無料枠では、送った内容がGoogleのサービス改善に使われることがあります（人が確認する場合もあります）。値札やパッケージ以外は写さないようにしてください。</p>`;
+  if (!c || !c.key){
+    el.innerHTML = `<h2 class="font-bold">AIで値札を読み取る（Gemini）</h2>
+      <p class="mt-1 text-sm text-sub leading-relaxed">ご自身のGemini APIキー（無料枠）を登録すると、値札やパッケージの写真から価格・枚数などを自動で入力できます。キーはこの端末の中にだけ保存されます。</p>
+      <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="mt-3 h-11 rounded-xl border border-line font-bold flex items-center justify-center text-sm">Google AI Studioでキーを取得</a>
+      <label class="block mt-3"><span class="text-xs text-sub">APIキー</span>
+        <input id="aiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ここに貼り付け" class="mt-0.5 w-full h-12 px-3 rounded-xl bg-white border border-line"></label>
+      <button type="button" id="aiKeySave" class="mt-3 w-full h-12 rounded-xl bg-ink text-white font-bold">登録して接続を確認</button>${note}`;
+    $('#aiKeySave').onclick = async () => {
+      const key = $('#aiKey').value.trim();
+      if (!key) return toast('APIキーを貼り付けてください');
+      const btn = $('#aiKeySave'); btn.disabled = true; btn.textContent = '確認しています…';
+      try {
+        const models = await AI.listModels(key);
+        if (!models.length) throw new Error('このキーで使えるFlashモデルが見つかりませんでした');
+        await AI.save({ key, model: models[0], models: models.slice(0, 8), savedAt: Date.now() });
+        toast('登録しました。「計算」から値札を撮れます'); renderAiSettings(); renderAiBar();
+      } catch(e){ toast(e.message || '接続できませんでした'); btn.disabled = false; btn.textContent = '登録して接続を確認'; }
+    };
+    return;
+  }
+  const models = [...new Set([c.model, ...(c.models || [])].filter(Boolean))];
+  el.innerHTML = `<h2 class="font-bold">AIで値札を読み取る（Gemini）</h2>
+    <p class="mt-1 text-sm"><span class="text-good font-bold">登録済み</span>（キー末尾 <span class="num">${esc(c.key.slice(-4))}</span>）</p>
+    <label class="block mt-3"><span class="text-xs text-sub">使うモデル（通常は自動のままで大丈夫です）</span>
+      <select id="aiModel" class="mt-0.5 w-full h-12 px-3 rounded-xl bg-white border border-line">${models.map(m => `<option value="${esc(m)}" ${m === c.model ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label>
+    <div class="mt-3 grid grid-cols-2 gap-2">
+      <button type="button" id="aiRefresh" class="h-12 rounded-xl border border-line font-bold text-sm">接続を確認</button>
+      <button type="button" id="aiKeyDel" class="h-12 rounded-xl border border-bad text-bad font-bold text-sm">キーを削除</button>
+    </div>${note}`;
+  $('#aiModel').onchange = async e => { await AI.save({ ...AI.get(), model: e.target.value }); toast('モデルを変更しました'); };
+  $('#aiRefresh').onclick = async () => {
+    try { const ms = await AI.listModels(c.key); await AI.save({ ...AI.get(), models: ms.slice(0, 8), model: ms.includes(c.model) ? c.model : ms[0] }); toast('接続できました'); renderAiSettings(); }
+    catch(e){ toast(e.message); }
+  };
+  $('#aiKeyDel').onclick = async () => { if (!confirm('APIキーをこの端末から削除しますか？')) return; await AI.remove(); renderAiSettings(); renderAiBar(); toast('キーを削除しました'); };
+}
 
 /* ========================= 表示設定 ========================= */
 const SIZE_OPTIONS = [ { v:'md', t:'標準', px:16 }, { v:'lg', t:'大きく', px:19 }, { v:'xl', t:'特大', px:22 } ];
@@ -1345,7 +1698,8 @@ $('#btnDisplay2').addEventListener('click', openDisplaySettings);
   try {
     if (!localStorage.getItem('omutsu-display')){ const m = await DB.get('meta', 'display'); if (m && m.value) applyDisplay(m.value); }
   } catch(e){}
-  await loadProducts(); await loadHistory();
+  await loadProducts(); await loadHistory(); await AI.load();
+  renderAiBar();
   renderChips(); renderProducts(); fillCalcSelect(); syncTax(); calc(); renderBadge();
   const start = location.hash.slice(1);
   show(['search','calc','history','settings'].includes(start) ? start : 'search');
